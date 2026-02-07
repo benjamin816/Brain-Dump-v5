@@ -1,4 +1,3 @@
-
 import { NextResponse } from 'next/server';
 import { getSheetsClient, getSheetId } from '@/lib/google-sheets';
 
@@ -7,15 +6,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const { id } = params;
     const updates = await req.json();
     const sheets = await getSheetsClient();
-    const spreadsheetId = process.env.GOOGLE_SHEETS_ID!;
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+
+    if (!spreadsheetId) {
+      return NextResponse.json({ ok: false, error: 'Spreadsheet ID is not configured' }, { status: 500 });
+    }
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Sheet1!A:A',
     });
     
-    const rows = res.data.values || [];
-    const rowIndex = rows.findIndex((row: any) => row[0] === id);
+    const rows = res.data.values;
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({ ok: false, error: 'No data found in sheet' }, { status: 404 });
+    }
+
+    const rowIndex = rows.findIndex((row: any) => row && row[0] === id);
 
     if (rowIndex === -1) {
       return NextResponse.json({ ok: false, error: 'Entry not found' }, { status: 404 });
@@ -26,7 +33,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       spreadsheetId,
       range: `Sheet1!A${rowNum}:G${rowNum}`,
     });
-    const currentRow = currentRes.data.values[0] || [];
+
+    const currentValues = currentRes.data.values;
+    if (!currentValues || currentValues.length === 0 || !currentValues[0]) {
+      return NextResponse.json({ ok: false, error: 'Row data not found' }, { status: 404 });
+    }
+
+    const currentRow = currentValues[0];
 
     const newRow = [
       currentRow[0],
@@ -58,21 +71,32 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   try {
     const { id } = params;
     const sheets = await getSheetsClient();
-    const spreadsheetId = process.env.GOOGLE_SHEETS_ID!;
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+
+    if (!spreadsheetId) {
+      return NextResponse.json({ ok: false, error: 'Spreadsheet ID is not configured' }, { status: 500 });
+    }
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Sheet1!A:A',
     });
     
-    const rows = res.data.values || [];
-    const rowIndex = rows.findIndex((row: any) => row[0] === id);
+    const rows = res.data.values;
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Entry not found' }, { status: 404 });
+    }
+
+    const rowIndex = rows.findIndex((row: any) => row && row[0] === id);
 
     if (rowIndex === -1) {
       return NextResponse.json({ ok: false, error: 'Entry not found' }, { status: 404 });
     }
 
     const sheetId = await getSheetId(sheets, spreadsheetId);
+    if (sheetId === undefined || sheetId === null) {
+      return NextResponse.json({ ok: false, error: 'Could not resolve sheet ID' }, { status: 500 });
+    }
 
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
