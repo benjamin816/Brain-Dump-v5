@@ -1,0 +1,5 @@
+{
+  "name": "Brain Dump v5",
+  "description": "A high-performance intelligent notes application that automatically categorizes thoughts and routes time-sensitive events to your calendar using Gemini AI.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,100 @@
+
+import { NextResponse } from 'next/server';
+import { getSheetsClient, getSheetId } from '@/lib/google-sheets';
+
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  try {
+    const { id } = params;
+    const updates = await req.json();
+    const sheets = await getSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID!;
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Sheet1!A:A',
+    });
+    
+    const rows = res.data.values || [];
+    const rowIndex = rows.findIndex((row: any) => row[0] === id);
+
+    if (rowIndex === -1) {
+      return NextResponse.json({ ok: false, error: 'Entry not found' }, { status: 404 });
+    }
+
+    const rowNum = rowIndex + 1;
+    const currentRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `Sheet1!A${rowNum}:G${rowNum}`,
+    });
+    const currentRow = currentRes.data.values[0] || [];
+
+    const newRow = [
+      currentRow[0],
+      updates.text !== undefined ? updates.text : currentRow[1],
+      updates.created_at_client !== undefined ? updates.created_at_client : currentRow[2],
+      currentRow[3],
+      updates.item_type !== undefined ? updates.item_type : currentRow[4],
+      updates.time_bucket !== undefined ? updates.time_bucket : currentRow[5],
+      updates.category !== undefined ? updates.category : currentRow[6],
+    ];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `Sheet1!A${rowNum}:G${rowNum}`,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [newRow],
+      },
+    });
+
+    return NextResponse.json({ ok: true, id, updated: true });
+  } catch (error: any) {
+    console.error('PATCH Entry Error:', error);
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  try {
+    const { id } = params;
+    const sheets = await getSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID!;
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Sheet1!A:A',
+    });
+    
+    const rows = res.data.values || [];
+    const rowIndex = rows.findIndex((row: any) => row[0] === id);
+
+    if (rowIndex === -1) {
+      return NextResponse.json({ ok: false, error: 'Entry not found' }, { status: 404 });
+    }
+
+    const sheetId = await getSheetId(sheets, spreadsheetId);
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    return NextResponse.json({ ok: true, id, deleted: true });
+  } catch (error: any) {
+    console.error('DELETE Entry Error:', error);
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+}
