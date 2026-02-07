@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// Use the API key from environment variables
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
 export async function classifyNote(text: string) {
   try {
@@ -18,7 +19,7 @@ export async function classifyNote(text: string) {
           properties: {
             item_type: { 
               type: Type.STRING, 
-              enum: ["task", "event", "idea", "education", "important_info"] 
+              enum: ["task", "event", "idea", "important_info"] 
             },
             time_bucket: { 
               type: Type.STRING, 
@@ -26,7 +27,7 @@ export async function classifyNote(text: string) {
             },
             category: { 
               type: Type.STRING, 
-              enum: ["personal", "work", "creative", "social_marketing", "health", "money", "food", "home", "travel", "learning", "admin", "wishlist"] 
+              enum: ["Work", "Personal", "Creative", "Social", "Health", "Finance", "Admin", "Other"] 
             },
           },
           required: ["item_type", "time_bucket", "category"],
@@ -41,7 +42,7 @@ export async function classifyNote(text: string) {
     return {
       item_type: "idea",
       time_bucket: "none",
-      category: "admin"
+      category: "Other"
     };
   }
 }

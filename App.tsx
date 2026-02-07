@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Note, Category } from './types';
+import { Note, Category, ItemType } from './types';
 import { analyzeNote } from './services/geminiService';
 import { forwardToCalendar } from './services/calendarService';
 import { CategoryFilter } from './components/CategoryFilter';
@@ -39,16 +39,23 @@ const App: React.FC = () => {
       const analysis = await analyzeNote(content);
       let forwarded = false;
 
+      // Fix: check if analysis has isEvent property (now defined in GeminiNoteAnalysis type)
       if (analysis.isEvent) {
         setLastAction("Routing to Calendar Agent...");
         forwarded = await forwardToCalendar(content);
       }
 
+      const now = new Date().toISOString();
       const newNote: Note = {
         id: crypto.randomUUID(),
-        content,
+        // Fix: content -> text to match Note interface
+        text: content,
         category: analysis.category,
-        timestamp: Date.now(),
+        // Fix: Add missing required fields for Note interface
+        item_type: analysis.isEvent ? ItemType.EVENT : ItemType.TASK,
+        created_at_client: now,
+        created_at_server: now,
+        // Fix: Map additional fields correctly
         isEvent: analysis.isEvent,
         forwardedToCalendar: forwarded,
         metadata: {

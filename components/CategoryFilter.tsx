@@ -16,20 +16,20 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({
   const categories = Object.values(Category);
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+    <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4">
       {categories.map((cat) => (
         <button
           key={cat}
           onClick={() => onSelectCategory(cat)}
-          className={`px-4 py-2 rounded-full whitespace-nowrap transition-all flex items-center gap-2 border ${
+          className={`px-6 py-2.5 rounded-2xl whitespace-nowrap transition-all flex items-center gap-3 border font-bold text-xs uppercase tracking-wider ${
             activeCategory === cat
-              ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20"
-              : "bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white"
+              ? "bg-white border-white text-black shadow-lg shadow-white/5"
+              : "bg-slate-900/50 border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300"
           }`}
         >
           <span>{cat}</span>
-          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-            activeCategory === cat ? "bg-blue-500" : "bg-slate-700"
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+            activeCategory === cat ? "bg-black/10" : "bg-white/5"
           }`}>
             {counts[cat] || 0}
           </span>
