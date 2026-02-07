@@ -1,10 +1,15 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Use the API key from environment variables
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 export async function classifyNote(text: string) {
+  const fallback = {
+    item_type: "idea",
+    time_bucket: "none",
+    category: "Other"
+  };
+
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -35,14 +40,20 @@ export async function classifyNote(text: string) {
       },
     });
 
-    const result = JSON.parse(response.text.trim());
+    const rawText = response.text;
+    if (!rawText) {
+      throw new Error("Gemini returned an undefined response text.");
+    }
+
+    const trimmedText = rawText.trim();
+    if (!trimmedText) {
+      throw new Error("Gemini returned an empty response text.");
+    }
+
+    const result = JSON.parse(trimmedText);
     return result;
   } catch (error) {
     console.error("Gemini Classification Error:", error);
-    return {
-      item_type: "idea",
-      time_bucket: "none",
-      category: "Other"
-    };
+    return fallback;
   }
 }

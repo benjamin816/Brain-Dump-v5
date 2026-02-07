@@ -1,10 +1,15 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Category, GeminiNoteAnalysis } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> => {
+  const fallback: GeminiNoteAnalysis = {
+    category: Category.OTHER,
+    isEvent: false,
+    summary: content.substring(0, 50),
+  };
+
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -42,7 +47,17 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
       },
     });
 
-    const analysis = JSON.parse(response.text.trim()) as GeminiNoteAnalysis;
+    const rawText = response.text;
+    if (!rawText) {
+      throw new Error("No text content returned from Gemini service.");
+    }
+
+    const trimmedText = rawText.trim();
+    if (!trimmedText) {
+      throw new Error("Empty text content returned from Gemini service.");
+    }
+
+    const analysis = JSON.parse(trimmedText) as GeminiNoteAnalysis;
     
     // Ensure the category is valid
     if (!Object.values(Category).includes(analysis.category as Category)) {
@@ -52,10 +67,6 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
     return analysis;
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
-    return {
-      category: Category.OTHER,
-      isEvent: false,
-      summary: content.substring(0, 50),
-    };
+    return fallback;
   }
 };
