@@ -14,7 +14,6 @@ export async function POST(req: Request) {
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
     const sheetEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const sheetKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-    // Fix: Always use process.env.API_KEY exclusively for Gemini API interactions
     const geminiKey = process.env.API_KEY;
 
     // Basic config validation
@@ -31,11 +30,9 @@ export async function POST(req: Request) {
 
     let text = '';
     let createdAtClient = new Date().toISOString();
-    let customCategories: string[] = [];
     let parsedFrom: 'urlencoded' | 'json' | 'rawFallback' | 'unknown' = 'unknown';
-    let receivedKeys: string[] = [];
 
-    // 1. Parsing Priority Logic
+    // 1. Parsing Logic
     if (contentType.includes('application/x-www-form-urlencoded') || rawTrim.includes('=')) {
       const params = new URLSearchParams(rawTrim);
       const foundText = params.get("text") || params.get("value") || params.get("Value") || 
@@ -44,19 +41,8 @@ export async function POST(req: Request) {
       if (foundText) {
         text = foundText;
         parsedFrom = 'urlencoded';
-        receivedKeys = Array.from(params.keys());
         const clientDate = params.get('created_at');
         if (clientDate) createdAtClient = clientDate;
-        const cats = params.get('categories');
-        if (cats) {
-          try {
-            customCategories = JSON.parse(cats);
-          } catch (e) {
-            customCategories = cats.split(',').map(c => c.trim()).filter(Boolean);
-          }
-        }
-      } else {
-        receivedKeys = Array.from(params.keys());
       }
     }
 
@@ -68,8 +54,6 @@ export async function POST(req: Request) {
           text = foundText;
           parsedFrom = 'json';
           if (body.created_at) createdAtClient = body.created_at;
-          if (Array.isArray(body.categories)) customCategories = body.categories;
-          receivedKeys = Object.keys(body);
         }
       } catch (e) {}
     }
@@ -80,35 +64,30 @@ export async function POST(req: Request) {
     }
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ 
-        ok: false, 
-        error: 'Missing text', 
-        parsedFrom,
-        receivedKeys: receivedKeys.length > 0 ? receivedKeys : undefined,
-        rawBodyPreview: rawTrim.substring(0, 120)
-      }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Missing text' }, { status: 400 });
     }
 
     const cleanText = text.trim();
     const sheets = await getSheetsClient();
 
-    // 2. Load centralized categories if not provided (server-side truth)
-    if (customCategories.length === 0) {
-      try {
-        customCategories = await getCategoriesFromSheet(sheets, spreadsheetId);
-      } catch (catErr) {
-        console.warn('Failed to fetch categories from sheet, using fallback list');
-      }
+    // 2. Load live categories from Config sheet
+    let liveCategories: string[] = [];
+    try {
+      liveCategories = await getCategoriesFromSheet(sheets, spreadsheetId);
+    } catch (catErr) {
+      console.warn('Failed to fetch categories from Config sheet, falling back to defaults.');
+      liveCategories = ['personal', 'work', 'other'];
     }
 
-    // 3. AI Analysis
-    const classification = await classifyNote(cleanText, customCategories);
+    // 3. AI Analysis using refined classifier
+    const classification = await classifyNote(cleanText, liveCategories);
     const id = crypto.randomUUID();
     const createdAtServer = new Date().toISOString();
 
     // 4. Calendar Routing
     let forwardedToCalendar = false;
-    if (classification.is_event) {
+    // item_type 'event' or is_event flag trigger forwarding
+    if (classification.item_type === 'event' || classification.is_event) {
       try {
         forwardedToCalendar = await forwardToCalendar(cleanText);
       } catch (calError) {
@@ -143,17 +122,22 @@ export async function POST(req: Request) {
       }
     } catch (sheetError: any) {
       console.error('Storage Error:', sheetError);
-      return NextResponse.json({ 
-        ok: false, 
-        error: `Storage failure: ${sheetError.message}`, 
-        parsedFrom 
-      }, { status: 500 });
+      return NextResponse.json({ ok: false, error: `Storage failure: ${sheetError.message}` }, { status: 500 });
     }
 
     return NextResponse.json({
       ok: true,
       id,
-      classification,
+      classification: {
+        item_type: classification.item_type,
+        category: classification.category,
+        time_bucket: classification.time_bucket,
+        is_event: classification.is_event,
+        summary: classification.summary
+      },
+      // Debug Info
+      classificationSource: classification.classificationSource,
+      rawModelTextPreview: classification.rawModelTextPreview,
       calendar_routed: forwardedToCalendar,
       sheet_write_ok: sheetWriteOk,
       parsedFrom
