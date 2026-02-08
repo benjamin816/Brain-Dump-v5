@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -16,10 +17,51 @@ export default function Home() {
       setIsLoading(true);
       const res = await fetch('/api/entries');
       const data = await res.json();
-      if (data.ok) {
-        const sorted = data.entries.sort((a: Note, b: Note) => 
-          new Date(b.created_at_server).getTime() - new Date(a.created_at_server).getTime()
-        );
+      
+      if (data.ok && Array.isArray(data.entries)) {
+        // Defensive Mapping Rule: Ensure the frontend receives correct fields regardless of backend quirks
+        const mapped: Note[] = data.entries.map((item: any) => {
+          // If the backend returns raw arrays, we map indices based on schema
+          if (Array.isArray(item)) {
+            return {
+              text: item[0],
+              created_at_client: item[1],
+              created_at_server: item[2],
+              item_type: item[3],
+              time_bucket: item[4],
+              category: item[5],
+              id: item[6],
+              source: item[7]
+            } as Note;
+          }
+          // If it returns objects, we normalize keys
+          return {
+            id: item.id || item.uuid,
+            text: item.text || item.content,
+            created_at_client: item.created_at_client || item.created_at,
+            created_at_server: item.created_at_server || item.received_at,
+            item_type: item.item_type,
+            time_bucket: item.time_bucket,
+            category: item.category || item.categories,
+            source: item.source || item.status
+          } as Note;
+        });
+
+        // Console Verification (as requested)
+        if (mapped.length > 0) {
+          console.log("UI Data Verification - Sample Entry:", {
+            text: mapped[0].text,
+            category: mapped[0].category,
+            id: mapped[0].id,
+            server_date: mapped[0].created_at_server
+          });
+        }
+
+        const sorted = mapped.sort((a, b) => {
+          const timeA = new Date(a.created_at_server || a.created_at_client || 0).getTime();
+          const timeB = new Date(b.created_at_server || b.created_at_client || 0).getTime();
+          return timeB - timeA;
+        });
         setNotes(sorted);
       }
     } catch (e) {
@@ -66,7 +108,6 @@ export default function Home() {
     } catch (error: any) {
       console.error("Processing error:", error);
       setStatus({ message: error.message || "Sync failed.", type: 'error' });
-      // Keep error message visible longer if it's a specific configuration error
       setTimeout(() => setStatus(null), 5000);
     } finally {
       setIsProcessing(false);
@@ -84,22 +125,36 @@ export default function Home() {
     }
   };
 
-  const filteredNotes = notes.filter(n => 
-    activeCategory === Category.ALL || n.category === activeCategory
-  );
+  // Case-Insensitive Category Normalization & Filtering
+  const filteredNotes = notes.filter(n => {
+    if (activeCategory === Category.ALL) return true;
+    const nCat = (n.category || '').toString().trim().toLowerCase();
+    const aCat = activeCategory.toString().trim().toLowerCase();
+    return nCat === aCat;
+  });
 
   const categories = Object.values(Category);
 
-  const getCategoryStyles = (cat: Category) => {
-    switch (cat) {
-      case Category.WORK: return 'text-purple-400 bg-purple-400/10 border-purple-400/20';
-      case Category.PERSONAL: return 'text-sky-400 bg-sky-400/10 border-sky-400/20';
-      case Category.CREATIVE: return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
-      case Category.HEALTH: return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
-      case Category.FINANCE: return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
-      case Category.SOCIAL: return 'text-pink-400 bg-pink-400/10 border-pink-400/20';
+  const getCategoryStyles = (cat: string = '') => {
+    const normalized = cat.toString().trim().toLowerCase();
+    switch (normalized) {
+      case 'work': return 'text-purple-400 bg-purple-400/10 border-purple-400/20';
+      case 'personal': return 'text-sky-400 bg-sky-400/10 border-sky-400/20';
+      case 'creative': return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
+      case 'health': return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
+      case 'finance': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+      case 'social': return 'text-pink-400 bg-pink-400/10 border-pink-400/20';
+      case 'admin': return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
       default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
     }
+  };
+
+  const safeFormatDate = (serverDate?: string, clientDate?: string) => {
+    const dateStr = serverDate || clientDate;
+    if (!dateStr) return 'No date';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return 'No date';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   return (
@@ -217,32 +272,43 @@ export default function Home() {
               </button>
               
               <div className="flex items-center gap-3 mb-6">
-                <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border ${getCategoryStyles(note.category as Category)}`}>
-                  {note.category}
+                <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border ${getCategoryStyles(note.category as string)}`}>
+                  {note.category || 'Other'}
                 </span>
                 <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
-                  {new Date(note.created_at_server).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {safeFormatDate(note.created_at_server, note.created_at_client)}
                 </span>
-                {note.item_type === 'event' && (
+                {(note.item_type?.toString().toLowerCase() === 'event' || note.isEvent) && (
                   <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1.5 rounded-lg font-black uppercase tracking-[0.2em]">
                     <i className="fa-solid fa-calendar-day mr-1.5"></i> Event
                   </span>
                 )}
+                {note.item_type && note.item_type.toString().toLowerCase() !== 'idea' && note.item_type.toString().toLowerCase() !== 'event' && (
+                  <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg font-black uppercase tracking-[0.2em]">
+                    {note.item_type}
+                  </span>
+                )}
               </div>
 
+              {/* Main Note Text */}
               <p className="text-slate-200 text-lg leading-relaxed whitespace-pre-wrap mb-8">
-                {note.text}
+                {note.text || 'Empty thought'}
               </p>
 
               <div className="flex items-center gap-4 text-[9px] font-bold uppercase tracking-[0.3em] text-slate-600">
                 <div className="flex items-center gap-1.5">
                   <i className="fa-solid fa-fingerprint text-[10px]"></i>
-                  <span>ID: {note.id.split('-')[0]}</span>
+                  <span>ID: {note.id ? note.id.toString().split('-')[0] : 'N/A'}</span>
                 </div>
-                {note.time_bucket && note.time_bucket !== 'none' && (
+                {note.time_bucket && note.time_bucket.toLowerCase() !== 'none' && (
                   <div className="flex items-center gap-1.5 text-indigo-400">
                     <i className="fa-regular fa-clock text-[10px]"></i>
                     <span>{note.time_bucket}</span>
+                  </div>
+                )}
+                {note.source && (
+                  <div className="ml-auto opacity-50 px-2 py-0.5 border border-white/5 rounded-md">
+                    {note.source}
                   </div>
                 )}
               </div>

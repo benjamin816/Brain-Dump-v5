@@ -21,12 +21,12 @@ export enum ItemType {
 export interface Note {
   id: string;
   text: string;
-  category: Category;
-  item_type: ItemType;
+  category: Category | string;
+  item_type: ItemType | string;
   created_at_client: string;
   created_at_server: string;
   time_bucket?: string;
-  // Added fields to support App.tsx routing and display
+  source?: string;
   isEvent?: boolean;
   forwardedToCalendar?: boolean;
   metadata?: {
