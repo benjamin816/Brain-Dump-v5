@@ -29,26 +29,66 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
 
-    const contentType = req.headers.get('content-type') || '';
+    const contentType = (req.headers.get('content-type') || '').toLowerCase();
     let text = '';
     let createdAtClient = new Date().toISOString();
     let customCategories: string[] = [];
+    let parsedFrom: 'json' | 'form' | 'text' = 'text';
 
     if (contentType.includes('application/json')) {
+      parsedFrom = 'json';
       const body = await req.json();
       text = body.text || '';
       if (body.created_at) createdAtClient = body.created_at;
       if (Array.isArray(body.categories)) customCategories = body.categories;
+    } else if (
+      contentType.includes('application/x-www-form-urlencoded') || 
+      contentType.includes('multipart/form-data')
+    ) {
+      parsedFrom = 'form';
+      const formData = await req.formData();
+      
+      // Candidate keys for the note text from iPhone Shortcuts or other form-based tools
+      const candidates = ['text', 'note', 'input', 'body'];
+      for (const key of candidates) {
+        const val = formData.get(key);
+        if (val && typeof val === 'string') {
+          text = val;
+          break;
+        }
+      }
+
+      // Check for other metadata if available in form fields
+      const clientDate = formData.get('created_at');
+      if (clientDate && typeof clientDate === 'string') createdAtClient = clientDate;
+      
+      const cats = formData.get('categories');
+      if (cats && typeof cats === 'string') {
+        try {
+          customCategories = JSON.parse(cats);
+        } catch (e) {
+          customCategories = cats.split(',').map(c => c.trim());
+        }
+      }
     } else {
+      parsedFrom = 'text';
       text = await req.text();
     }
 
-    if (!text.trim()) {
-      return NextResponse.json({ ok: false, error: 'Empty content' }, { status: 400 });
+    // Guard against empty content
+    if (!text || !text.trim()) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'Missing text', 
+        parsedFrom 
+      }, { status: 400 });
     }
 
+    // Clean up text in case it's double-encoded or contains unexpected whitespace
+    const cleanText = text.trim();
+
     // 1. AI Analysis with dynamic categories if provided
-    const classification = await classifyNote(text, customCategories);
+    const classification = await classifyNote(cleanText, customCategories);
     const id = crypto.randomUUID();
     const createdAtServer = new Date().toISOString();
 
@@ -56,7 +96,7 @@ export async function POST(req: Request) {
     let forwardedToCalendar = false;
     if (classification.is_event) {
       try {
-        forwardedToCalendar = await forwardToCalendar(text);
+        forwardedToCalendar = await forwardToCalendar(cleanText);
       } catch (calError) {
         console.warn('Calendar routing failed:', calError);
       }
@@ -74,7 +114,7 @@ export async function POST(req: Request) {
         valueInputOption: 'RAW',
         requestBody: {
           values: [[
-            text,
+            cleanText,
             createdAtClient,
             createdAtServer,
             classification.item_type,
@@ -91,7 +131,7 @@ export async function POST(req: Request) {
       }
     } catch (sheetError: any) {
       console.error('Storage Error:', sheetError);
-      return NextResponse.json({ ok: false, error: `Storage failure: ${sheetError.message}` }, { status: 500 });
+      return NextResponse.json({ ok: false, error: `Storage failure: ${sheetError.message}`, parsedFrom }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -99,7 +139,8 @@ export async function POST(req: Request) {
       id,
       classification,
       calendar_routed: forwardedToCalendar,
-      sheet_write_ok: sheetWriteOk
+      sheet_write_ok: sheetWriteOk,
+      parsedFrom
     });
   } catch (error: any) {
     console.error('Inbox API Handler Error:', error);
