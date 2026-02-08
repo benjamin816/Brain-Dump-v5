@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Note, Category, TrashedNote, ViewType } from '@/types';
 import { NoteCard } from '@/components/NoteCard';
 import { CategoryFilter } from '@/components/CategoryFilter';
+import pkg from '@/package.json';
 
 const TRASH_STORAGE_KEY = 'braindump_trash_v1';
 const CATEGORIES_STORAGE_KEY = 'braindump_categories_v1';
@@ -219,7 +220,7 @@ export default function Home() {
 
         <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 mb-6">
           <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Intelligence Layer v5.1</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Intelligence Layer v{pkg.version.split('.')[0]}</span>
         </div>
         <h1 className="text-6xl font-black tracking-tighter mb-4 bg-gradient-to-b from-white to-slate-500 bg-clip-text text-transparent">Brain Dump</h1>
         <div className="flex items-center justify-center gap-4 text-slate-500 font-mono text-[10px] uppercase tracking-widest">
@@ -451,6 +452,11 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Version Footer */}
+      <div className="fixed bottom-4 left-0 right-0 flex justify-center pointer-events-none opacity-20">
+        <span className="text-[8px] font-black uppercase tracking-[0.8em] text-slate-500">v{pkg.version.split('.')[0]}</span>
+      </div>
     </main>
   );
 }
