@@ -205,10 +205,10 @@ export default function Home() {
   }, [notes, trash, activeCategory, currentView]);
 
   return (
-    <main className="min-h-screen max-w-5xl mx-auto px-6 py-12 md:py-24 relative">
+    <main className="min-h-screen max-w-5xl mx-auto px-6 py-12 md:py-20 relative">
       <div className="fixed inset-0 pointer-events-none -z-10 bg-[radial-gradient(circle_at_50%_0%,#1e1b4b_0%,#0f172a_50%)]" />
 
-      <header className="mb-16 text-center animate-fade-in relative">
+      <header className="mb-12 text-center animate-fade-in relative">
         <div className="absolute top-0 right-0">
           <button 
             onClick={() => setCurrentView(currentView === 'settings' ? 'inbox' : 'settings')}
@@ -296,7 +296,7 @@ export default function Home() {
       ) : (
         <>
           {currentView === 'inbox' && (
-            <section className="mb-20 max-w-3xl mx-auto animate-fade-in">
+            <section className="mb-16 max-w-3xl mx-auto animate-fade-in">
               <div className="glass p-2 rounded-[3.5rem] border-white/5 shadow-2xl focus-within:ring-2 ring-indigo-500/40 transition-all">
                 <div className="relative">
                   <textarea
@@ -339,12 +339,12 @@ export default function Home() {
             </section>
           )}
 
-          <div className="flex flex-col items-center mb-16 gap-8">
-            <div className="flex items-center gap-1 bg-slate-900/80 p-1.5 rounded-[2rem] border border-white/5 backdrop-blur-3xl shadow-2xl">
-              <button onClick={() => setCurrentView('inbox')} className={`px-12 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentView === 'inbox' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/30' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
+          <div className="flex flex-col items-center mb-12 gap-6">
+            <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-[1.8rem] border border-white/5 backdrop-blur-3xl shadow-2xl">
+              <button onClick={() => setCurrentView('inbox')} className={`px-10 py-3 rounded-[1.3rem] text-[9px] font-black uppercase tracking-widest transition-all ${currentView === 'inbox' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/30' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
                 <i className="fa-solid fa-brain mr-2"></i> Neural Inbox
               </button>
-              <button onClick={() => setCurrentView('trash')} className={`px-12 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentView === 'trash' ? 'bg-rose-600 text-white shadow-xl shadow-rose-600/30' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
+              <button onClick={() => setCurrentView('trash')} className={`px-10 py-3 rounded-[1.3rem] text-[9px] font-black uppercase tracking-widest transition-all ${currentView === 'trash' ? 'bg-rose-600 text-white shadow-xl shadow-rose-600/30' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
                 <i className="fa-solid fa-trash-can mr-2"></i> Archive
               </button>
             </div>
@@ -357,9 +357,9 @@ export default function Home() {
             />
           </div>
 
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-10 mt-12 mb-32">
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-10 mt-8 mb-24">
             {isLoading && notes.length === 0 ? (
-              <div className="col-span-full py-40 text-center flex flex-col items-center gap-6">
+              <div className="col-span-full py-32 text-center flex flex-col items-center gap-6">
                 <div className="relative">
                   <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -381,32 +381,15 @@ export default function Home() {
                 />
               ))
             ) : (
-              <div className="col-span-full py-48 text-center glass rounded-[4rem] border-dashed border-white/10 flex flex-col items-center justify-center animate-fade-in group">
-                <div className="w-24 h-24 bg-slate-800/50 rounded-[2.5rem] flex items-center justify-center mb-8 border border-white/5 group-hover:scale-110 transition-transform duration-500 shadow-2xl">
-                  <i className="fa-solid fa-ghost text-4xl text-slate-600 group-hover:text-indigo-500/50 transition-colors"></i>
+              <div className="col-span-full py-40 text-center glass rounded-[4rem] border-dashed border-white/10 flex flex-col items-center justify-center animate-fade-in group">
+                <div className="w-20 h-20 bg-slate-800/50 rounded-[2rem] flex items-center justify-center mb-6 border border-white/5 group-hover:scale-110 transition-transform duration-500 shadow-2xl">
+                  <i className="fa-solid fa-ghost text-3xl text-slate-600 group-hover:text-indigo-500/50 transition-colors"></i>
                 </div>
-                <h3 className="text-2xl font-black text-slate-300 mb-2">Null Headspace Detected</h3>
+                <h3 className="text-xl font-black text-slate-300 mb-2">Null Headspace Detected</h3>
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">No signals found in the {activeCategory === Category.ALL ? 'active frequency' : `${activeCategory} spectrum`}</p>
               </div>
             )}
           </section>
-
-          {/* Siri Shortcut Info Section */}
-          <footer className="max-w-2xl mx-auto py-12 border-t border-white/5 text-center">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-500/50 mb-8">External Uplink Configuration</h4>
-            <div className="flex flex-wrap justify-center gap-12 text-slate-500">
-               <div className="flex flex-col items-center gap-3">
-                 <i className="fa-solid fa-link text-xl text-slate-700"></i>
-                 <div className="text-[9px] font-black uppercase tracking-widest">Webhook Endpoint</div>
-                 <code className="bg-black/40 px-3 py-1.5 rounded border border-white/5 text-[10px] text-emerald-500">/api/inbox</code>
-               </div>
-               <div className="flex flex-col items-center gap-3">
-                 <i className="fa-solid fa-microphone text-xl text-slate-700"></i>
-                 <div className="text-[9px] font-black uppercase tracking-widest">Siri Shortcut</div>
-                 <div className="text-[10px] text-slate-400">POST plain text to URL</div>
-               </div>
-            </div>
-          </footer>
         </>
       )}
 
@@ -429,12 +412,12 @@ export default function Home() {
               className="w-full bg-slate-900/50 border border-white/10 rounded-3xl p-8 text-xl text-white min-h-[250px] mb-10 focus:ring-2 ring-indigo-500/30 transition-all outline-none"
             />
             
-            <div className="flex flex-wrap gap-3 mb-12">
+            <div className="flex flex-wrap gap-2 mb-12">
               {customCategories.map(cat => (
                 <button
                   key={cat}
                   onClick={() => setEditCategory(cat)}
-                  className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${editCategory === cat ? 'bg-indigo-500 border-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:border-white/10'}`}
+                  className={`px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${editCategory === cat ? 'bg-indigo-500 border-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-900/50 border-white/5 text-slate-500 hover:border-white/10'}`}
                 >
                   {cat}
                 </button>
