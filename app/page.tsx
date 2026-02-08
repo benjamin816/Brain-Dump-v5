@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -12,6 +11,12 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  // Edit State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [editCategory, setEditCategory] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState(false);
+
   const fetchNotes = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -19,9 +24,7 @@ export default function Home() {
       const data = await res.json();
       
       if (data.ok && Array.isArray(data.entries)) {
-        // Defensive Mapping Rule: Ensure the frontend receives correct fields regardless of backend quirks
         const mapped: Note[] = data.entries.map((item: any) => {
-          // If the backend returns raw arrays, we map indices based on schema
           if (Array.isArray(item)) {
             return {
               text: item[0],
@@ -34,7 +37,6 @@ export default function Home() {
               source: item[7]
             } as Note;
           }
-          // If it returns objects, we normalize keys
           return {
             id: item.id || item.uuid,
             text: item.text || item.content,
@@ -46,16 +48,6 @@ export default function Home() {
             source: item.source || item.status
           } as Note;
         });
-
-        // Console Verification (as requested)
-        if (mapped.length > 0) {
-          console.log("UI Data Verification - Sample Entry:", {
-            text: mapped[0].text,
-            category: mapped[0].category,
-            id: mapped[0].id,
-            server_date: mapped[0].created_at_server
-          });
-        }
 
         const sorted = mapped.sort((a, b) => {
           const timeA = new Date(a.created_at_server || a.created_at_client || 0).getTime();
@@ -114,18 +106,65 @@ export default function Home() {
     }
   };
 
+  const startEditing = (note: Note) => {
+    setEditingId(note.id);
+    setEditValue(note.text);
+    setEditCategory(note.category as string);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditValue('');
+    setEditCategory('');
+  };
+
+  const updateNote = async (id: string) => {
+    if (!id || isUpdating) return;
+    setIsUpdating(true);
+    setStatus({ message: "Updating note...", type: 'info' });
+
+    try {
+      const res = await fetch(`/api/entries/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: editValue,
+          category: editCategory
+        })
+      });
+
+      const result = await res.json();
+      if (result.ok) {
+        setStatus({ message: "Note updated successfully", type: 'success' });
+        setEditingId(null);
+        await fetchNotes();
+        setTimeout(() => setStatus(null), 3000);
+      } else {
+        throw new Error(result.error || "Update failed");
+      }
+    } catch (error: any) {
+      console.error("Update error:", error);
+      setStatus({ message: error.message || "Update failed", type: 'error' });
+      setTimeout(() => setStatus(null), 5000);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const deleteNote = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this thought?')) return;
     try {
       const res = await fetch(`/api/entries/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setNotes(prev => prev.filter(n => n.id !== id));
+        setStatus({ message: "Note deleted", type: 'info' });
+        setTimeout(() => setStatus(null), 2000);
       }
     } catch (e) {
       console.error("Delete error", e);
     }
   };
 
-  // Case-Insensitive Category Normalization & Filtering
   const filteredNotes = notes.filter(n => {
     if (activeCategory === Category.ALL) return true;
     const nCat = (n.category || '').toString().trim().toLowerCase();
@@ -170,9 +209,9 @@ export default function Home() {
         </p>
       </header>
 
-      {/* Sticky Input Area */}
-      <section className="sticky top-6 z-50 mb-20 max-w-3xl mx-auto">
-        <div className="glass p-2 rounded-[2rem] border-white/5 group shadow-2xl">
+      {/* Standard Input Area (No longer sticky to prevent overlay) */}
+      <section className="mb-16 max-w-3xl mx-auto">
+        <div className="glass p-2 rounded-[2rem] border-white/5 group shadow-2xl transition-all hover:border-white/10">
           <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
@@ -262,38 +301,98 @@ export default function Home() {
           filteredNotes.map((note) => (
             <div 
               key={note.id} 
-              className="glass group p-8 rounded-[2rem] border-white/5 relative transition-all hover:-translate-y-1 hover:bg-white/[0.04] animate-fade-in"
+              className={`glass group p-8 rounded-[2rem] border-white/5 relative transition-all animate-fade-in ${
+                editingId === note.id ? "ring-2 ring-indigo-500/50 bg-indigo-500/5 shadow-2xl" : "hover:-translate-y-1 hover:bg-white/[0.04]"
+              }`}
             >
-              <button 
-                onClick={() => deleteNote(note.id)}
-                className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-all p-2 text-slate-600 hover:text-rose-500 bg-slate-900/50 rounded-xl"
-              >
-                <i className="fa-solid fa-trash-can text-xs"></i>
-              </button>
+              {/* Note Action Toolbar */}
+              <div className="absolute top-6 right-6 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                {editingId === note.id ? (
+                  <>
+                    <button 
+                      onClick={() => updateNote(note.id)}
+                      disabled={isUpdating}
+                      className="p-2.5 text-emerald-400 bg-slate-900/80 rounded-xl hover:bg-emerald-500/10 transition-colors"
+                      title="Save Changes"
+                    >
+                      <i className={`fa-solid ${isUpdating ? 'fa-circle-notch fa-spin' : 'fa-check'} text-xs`}></i>
+                    </button>
+                    <button 
+                      onClick={cancelEditing}
+                      disabled={isUpdating}
+                      className="p-2.5 text-slate-400 bg-slate-900/80 rounded-xl hover:bg-slate-700 transition-colors"
+                      title="Cancel Edit"
+                    >
+                      <i className="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {!note.id ? (
+                      <span className="text-[8px] bg-slate-800 text-slate-500 px-2 py-1 rounded-md font-mono flex items-center gap-1">
+                        <i className="fa-solid fa-lock text-[6px]"></i> NO ID
+                      </span>
+                    ) : (
+                      <button 
+                        onClick={() => startEditing(note)}
+                        className="p-2.5 text-slate-400 bg-slate-900/80 rounded-xl hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+                        title="Edit Note"
+                      >
+                        <i className="fa-solid fa-pen-to-square text-xs"></i>
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => deleteNote(note.id)}
+                      className="p-2.5 text-slate-500 bg-slate-900/80 rounded-xl hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                      title="Delete Note"
+                    >
+                      <i className="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                  </>
+                )}
+              </div>
               
               <div className="flex items-center gap-3 mb-6">
-                <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border ${getCategoryStyles(note.category as string)}`}>
-                  {note.category || 'Other'}
-                </span>
+                {editingId === note.id ? (
+                   <select 
+                     value={editCategory}
+                     onChange={(e) => setEditCategory(e.target.value)}
+                     className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border bg-slate-900 text-slate-100 border-indigo-500/30 focus:ring-0 focus:border-indigo-500/60`}
+                   >
+                     {categories.filter(c => c !== Category.ALL).map(c => (
+                       <option key={c} value={c}>{c}</option>
+                     ))}
+                   </select>
+                ) : (
+                  <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border ${getCategoryStyles(note.category as string)}`}>
+                    {note.category || 'Other'}
+                  </span>
+                )}
+                
                 <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
                   {safeFormatDate(note.created_at_server, note.created_at_client)}
                 </span>
+
                 {(note.item_type?.toString().toLowerCase() === 'event' || note.isEvent) && (
                   <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1.5 rounded-lg font-black uppercase tracking-[0.2em]">
                     <i className="fa-solid fa-calendar-day mr-1.5"></i> Event
                   </span>
                 )}
-                {note.item_type && note.item_type.toString().toLowerCase() !== 'idea' && note.item_type.toString().toLowerCase() !== 'event' && (
-                  <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1.5 rounded-lg font-black uppercase tracking-[0.2em]">
-                    {note.item_type}
-                  </span>
-                )}
               </div>
 
-              {/* Main Note Text */}
-              <p className="text-slate-200 text-lg leading-relaxed whitespace-pre-wrap mb-8">
-                {note.text || 'Empty thought'}
-              </p>
+              {/* Main Note Text or Edit Area */}
+              {editingId === note.id ? (
+                <textarea
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  autoFocus
+                  className="w-full bg-slate-900/50 border border-indigo-500/20 rounded-2xl p-4 text-slate-100 text-lg leading-relaxed resize-none min-h-[120px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 mb-8 transition-all"
+                />
+              ) : (
+                <p className="text-slate-200 text-lg leading-relaxed whitespace-pre-wrap mb-8">
+                  {note.text || 'Empty thought'}
+                </p>
+              )}
 
               <div className="flex items-center gap-4 text-[9px] font-bold uppercase tracking-[0.3em] text-slate-600">
                 <div className="flex items-center gap-1.5">
