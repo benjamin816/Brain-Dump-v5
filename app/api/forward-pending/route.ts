@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSheetsClient, ensureOutboxSheet, updateOutboxRow } from '@/lib/google-sheets';
+import { getSheetsClient, ensureOutboxSheet, updateOutboxRow, updateRowStatus } from '@/lib/google-sheets';
 import { forwardToCalendar } from '@/services/calendarService';
 import { ForwardResponse } from '@/types';
 
@@ -11,7 +11,8 @@ export async function POST(req: Request) {
     const { searchParams } = new URL(req.url);
     const requestKey = req.headers.get('x-outbox-key') || searchParams.get('key');
 
-    if (!cronKey || requestKey !== cronKey) {
+    // Simple security layer
+    if (cronKey && requestKey !== cronKey) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -37,40 +38,50 @@ export async function POST(req: Request) {
     }
 
     const results = { processed: 0, sent: 0, failed: 0 };
-    const MAX_PROCESS = 10;
+    const MAX_PROCESS = 25; // Process up to 25 items per run
     
     for (let i = 1; i < rows.length && results.processed < MAX_PROCESS; i++) {
       const row = rows[i];
-      // Indices: created_at(0), text(1), item_type(2), status(3), attempts(4), last_error(5), last_attempt_at(6), sent_at(7), id(8)
+      // Mapping based on lib/google-sheets.ts:
+      // 1: text, 3: status, 4: attempts, 8: id, 9: remote_id
       const text = row[1];
       const status = row[3];
       const attempts = parseInt(row[4] || '0', 10);
-      const outboxId = row[8] || `legacy-${i}`;
+      const outboxId = row[8] || `gen-${i}`;
+      const remoteId = row[9];
 
-      if ((status === 'pending' || status === 'failed') && attempts < 5) {
+      // Retry condition: Not 'sent' OR missing 'remote_id' (if attempts remain)
+      const needsForwarding = (status !== 'sent' || !remoteId) && attempts < 5;
+
+      if (needsForwarding) {
         results.processed++;
         const rowNumber = i + 1;
         const range = `Outbox!A${rowNumber}:O${rowNumber}`;
 
-        console.log(`[Forward-Pending] Retrying row ${rowNumber}. ID: ${outboxId}. Attempt ${attempts + 1}`);
+        console.log(`[Forward-Pending] Processing row ${rowNumber}. ID: ${outboxId}. Attempt ${attempts + 1}`);
 
         try {
           const forwardRes: ForwardResponse = await forwardToCalendar(text, chronosKey, outboxId, chronosBaseUrl);
           
-          if (forwardRes.success) {
+          if (forwardRes.success && forwardRes.data?.id) {
             results.sent++;
-            console.log(`[Forward-Pending] Success! Remote ID: ${forwardRes.data?.id}`);
+            console.log(`[Forward-Pending] Success! ID: ${outboxId} -> Remote ID: ${forwardRes.data?.id}`);
+            
+            // Sync status back to main Sheet1 if we can find it
+            // This requires scanning Sheet1 or having a faster index, but we'll stick to updating Outbox first.
+            // For BrainDump v5, we mostly care about the Outbox being the source of truth for routing.
           } else {
             results.failed++;
-            console.warn(`[Forward-Pending] Failed: ${forwardRes.error}`);
+            console.warn(`[Forward-Pending] Failed for ID: ${outboxId}: ${forwardRes.error}`);
           }
           
           await updateOutboxRow(sheets, spreadsheetId, range, forwardRes);
         } catch (err: any) {
           results.failed++;
+          console.error(`[Forward-Pending] Fatal error for ID: ${outboxId}`, err);
           await updateOutboxRow(sheets, spreadsheetId, range, { 
             success: false, 
-            error: err.message || 'Unknown forward error' 
+            error: err.message || 'Unknown internal error' 
           });
         }
       }
@@ -84,5 +95,6 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
+  // Allow GET for easy manual triggering or simple cron services
   return POST(req);
 }

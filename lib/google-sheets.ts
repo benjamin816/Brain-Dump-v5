@@ -7,9 +7,12 @@ const DEFAULT_CATEGORIES = [
   'admin', 'wishlist', 'other'
 ];
 
-// Expanded headers for detailed execution tracking
-// A: created_at, B: text, C: item_type, D: status, E: attempts, F: last_error, G: last_attempt_at, H: sent_at, I: id
-// J: remote_id, K: remote_action, L: remote_calendar_id, M: remote_start, N: remote_end, O: remote_raw_response
+/**
+ * Outbox Headers Mapping:
+ * 0: created_at, 1: text, 2: item_type, 3: status, 4: attempts, 5: last_error, 
+ * 6: last_attempt_at, 7: sent_at, 8: id (OUTBOX_ID), 9: remote_id, 10: remote_action, 
+ * 11: remote_calendar_id, 12: remote_start, 13: remote_end, 14: remote_raw_response
+ */
 const OUTBOX_HEADERS = [
   'created_at', 'text', 'item_type', 'status', 'attempts', 'last_error', 'last_attempt_at', 'sent_at', 
   'id', 'remote_id', 'remote_action', 'remote_calendar_id', 'remote_start', 'remote_end', 'remote_raw_response'
@@ -130,22 +133,25 @@ export async function updateOutboxRow(sheets: any, spreadsheetId: string, range:
   const currentAttempts = parseInt(row[4] || '0', 10);
   const outboxId = row[8] || '';
 
+  // Determine if it was actually "sent" based on response data OR existing status
+  const isNowSent = result.success && result.data?.id;
+
   const updatedRow = [
     row[0], // created_at
     row[1], // text
     row[2], // item_type
-    result.success ? 'sent' : 'failed', // status
+    isNowSent ? 'sent' : 'failed', // status
     currentAttempts + 1, // attempts
-    result.error || '', // last_error
+    result.error || (isNowSent ? '' : 'Unknown Error'), // last_error
     now, // last_attempt_at
-    result.success ? now : '', // sent_at
-    outboxId, // id
-    result.data?.id || '', // remote_id
-    result.data?.action || '', // remote_action
-    result.data?.calendarId || '', // remote_calendar_id
-    result.data?.start || result.data?.date || '', // remote_start
-    result.data?.end || '', // remote_end
-    result.data ? JSON.stringify(result.data).substring(0, 1000) : '' // remote_raw_response
+    isNowSent ? now : (row[7] || ''), // sent_at
+    outboxId, // id (OUTBOX_ID)
+    result.data?.id || row[9] || '', // remote_id
+    result.data?.action || row[10] || '', // remote_action
+    result.data?.calendarId || row[11] || '', // remote_calendar_id
+    result.data?.start || result.data?.date || row[12] || '', // remote_start
+    result.data?.end || row[13] || '', // remote_end
+    result.data ? JSON.stringify(result.data).substring(0, 1000) : (row[14] || '') // remote_raw_response
   ];
 
   await sheets.spreadsheets.values.update({

@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   try {
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
     const apiKey = process.env.API_KEY;
-    const chronosKey = process.env.CHRONOS_INBOX_KEY || '87654321'; // Defaulting to temporary key per request
+    const chronosKey = process.env.CHRONOS_INBOX_KEY || '87654321'; 
     const chronosBaseUrl = process.env.CALENDAR_AGENT_BASE_URL;
 
     if (!spreadsheetId || !apiKey) {
@@ -27,6 +27,7 @@ export async function POST(req: Request) {
     let text = '';
     let createdAtClient = new Date().toISOString();
 
+    // 1. Unified Body Parsing
     if (contentType.includes('application/x-www-form-urlencoded') || rawTrim.includes('=')) {
       const params = new URLSearchParams(rawTrim);
       const foundText = params.get("text") || params.get("value") || params.get("note");
@@ -60,8 +61,8 @@ export async function POST(req: Request) {
 
     const cleanText = text.trim();
     const sheets = await getSheetsClient();
-    await ensureOutboxSheet(sheets, spreadsheetId!);
-
+    
+    // Get latest categories for classification
     let liveCategories = [];
     try {
       liveCategories = await getCategoriesFromSheet(sheets, spreadsheetId!);
@@ -69,11 +70,12 @@ export async function POST(req: Request) {
       liveCategories = ['personal', 'work', 'other'];
     }
 
+    // AI Classification
     const classification = await classifyNote(cleanText, liveCategories);
-    const id = crypto.randomUUID(); // Stable identifier for idempotency
+    const outboxId = crypto.randomUUID(); // Stable ID for this specific note instance
     const createdAtServer = new Date().toISOString();
 
-    // 1. Persistence to Sheet1 (User Inbox)
+    // 2. Persistence to Sheet1 (The User's Main List)
     let sheet1Range = '';
     try {
       await ensureHeaders(sheets, spreadsheetId!);
@@ -89,47 +91,49 @@ export async function POST(req: Request) {
             classification.item_type,
             classification.time_bucket,
             classification.category,
-            id,
+            outboxId,
             'LOCAL'
           ]],
         },
       });
       sheet1Range = appendRes.data.updates?.updatedRange || '';
     } catch (sheetError) {
-      console.error('Storage Error:', sheetError);
+      console.error('[Inbox] Sheet1 Storage Error:', sheetError);
     }
 
-    // 2. Outbox & Routing
+    // 3. Routing Logic (Tasks & Events go to Outbox)
     const isRoutable = classification.item_type === 'task' || classification.item_type === 'event';
     if (isRoutable) {
+      await ensureOutboxSheet(sheets, spreadsheetId!);
       const outboxRange = await enqueueOutbox(sheets, spreadsheetId!, { 
         text: cleanText, 
         item_type: classification.item_type,
-        id 
+        id: outboxId 
       });
       
-      // Attempt immediate forward
+      // Attempt Immediate Forwarding
       try {
-        console.log(`[Inbox] Forwarding routable thought to executor. ID: ${id}`);
-        const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey, id, chronosBaseUrl);
-        forwarded = res.success;
+        console.log(`[Inbox] Routable thought detected (${classification.item_type}). Forwarding ID: ${outboxId}`);
+        const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey, outboxId, chronosBaseUrl);
+        
+        forwarded = res.success && !!res.data?.id;
 
         if (outboxRange) {
           await updateOutboxRow(sheets, spreadsheetId!, outboxRange, res);
         }
 
-        // Update Sheet1 status to FORWARDED if successful
+        // If immediately successful, update Sheet1 status for visual feedback
         if (forwarded && sheet1Range) {
           await updateRowStatus(sheets, spreadsheetId!, sheet1Range, 'FORWARDED');
         }
       } catch (calError: any) {
-        console.error('[Inbox] Forwarding failed:', calError.message);
+        console.warn(`[Inbox] Immediate forwarding failed for ID: ${outboxId}. Logged to outbox for retry.`);
       }
     }
 
     return NextResponse.json({
       ok: true,
-      id,
+      id: outboxId,
       classification,
       calendar_routed: forwarded,
       forwarded,
@@ -137,7 +141,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error('[Inbox] Critical Error:', error);
+    console.error('[Inbox] Critical Failure:', error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
