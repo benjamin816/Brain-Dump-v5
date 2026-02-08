@@ -9,11 +9,15 @@ export async function POST(req: Request) {
     const cronKey = process.env.OUTBOX_CRON_KEY;
     const { searchParams } = new URL(req.url);
     
-    // Read from header or query parameter
+    /**
+     * Platform-agnostic Authentication:
+     * Accepts key via 'x-outbox-key' header OR 'key' query parameter.
+     */
     const requestKey = req.headers.get('x-outbox-key') || searchParams.get('key');
 
     // 1. Security Check
     if (!cronKey || requestKey !== cronKey) {
+      console.warn('[Forward-Pending] Unauthorized access attempt.');
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -45,7 +49,7 @@ export async function POST(req: Request) {
     };
 
     // Skip header row
-    // We process up to 10 items to prevent timeouts
+    // Batch processing limit to prevent timeout on generic serverless/lambda runners
     const MAX_PROCESS = 10;
     
     for (let i = 1; i < rows.length && results.processed < MAX_PROCESS; i++) {
@@ -85,7 +89,7 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log(`[Forward-Pending] Done. Processed: ${results.processed}, Sent: ${results.sent}, Failed: ${results.failed}`);
+    console.log(`[Forward-Pending] Execution Complete. Processed: ${results.processed}, Sent: ${results.sent}, Failed: ${results.failed}`);
 
     return NextResponse.json({
       ok: true,
@@ -93,13 +97,14 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error('Forward Pending API Error:', error);
+    console.error('[Forward-Pending] API Critical Error:', error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
 
-// Support GET for easier manual testing or simple cron triggers if needed,
-// though POST is generally preferred for actions that modify state.
+/**
+ * Support GET for simple triggers (like GitHub Actions 'curl' or standard cron tools)
+ */
 export async function GET(req: Request) {
   return POST(req);
 }

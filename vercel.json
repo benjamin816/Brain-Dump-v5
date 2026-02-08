@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/forward-pending?key=$OUTBOX_CRON_KEY",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+{}
