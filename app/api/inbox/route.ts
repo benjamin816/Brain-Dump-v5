@@ -1,28 +1,22 @@
 import { NextResponse } from 'next/server';
 import { classifyNote } from '@/lib/gemini';
 import { getSheetsClient, ensureHeaders, getCategoriesFromSheet, ensureOutboxSheet, enqueueOutbox, updateOutboxRow, updateRowStatus } from '@/lib/google-sheets';
-import { forwardToCalendar, ForwardResponse } from '@/services/calendarService';
+import { forwardToCalendar } from '@/services/calendarService';
+import { ForwardResponse } from '@/types';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
-  return NextResponse.json({ ok: true, message: "inbox live" });
-}
-
 export async function POST(req: Request) {
   let parsedFrom: 'urlencoded' | 'json' | 'rawFallback' | 'unknown' = 'unknown';
-  let forwardStatus: number | undefined;
-  let forwardError: string | undefined;
   let forwarded = false;
 
   try {
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
-    const sheetEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const sheetKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
     const apiKey = process.env.API_KEY;
-    const chronosKey = process.env.CHRONOS_SIRI_KEY;
+    const chronosKey = process.env.CHRONOS_INBOX_KEY || '87654321'; // Defaulting to temporary key per request
+    const chronosBaseUrl = process.env.CALENDAR_AGENT_BASE_URL;
 
-    if (!spreadsheetId || !sheetEmail || !sheetKey || !apiKey) {
+    if (!spreadsheetId || !apiKey) {
       return NextResponse.json({ ok: false, error: 'Missing environment configuration' }, { status: 500 });
     }
 
@@ -35,7 +29,7 @@ export async function POST(req: Request) {
 
     if (contentType.includes('application/x-www-form-urlencoded') || rawTrim.includes('=')) {
       const params = new URLSearchParams(rawTrim);
-      const foundText = params.get("text") || params.get("value") || params.get("Value") || params.get("note");
+      const foundText = params.get("text") || params.get("value") || params.get("note");
       if (foundText) {
         text = foundText;
         parsedFrom = 'urlencoded';
@@ -76,10 +70,10 @@ export async function POST(req: Request) {
     }
 
     const classification = await classifyNote(cleanText, liveCategories);
-    const id = crypto.randomUUID();
+    const id = crypto.randomUUID(); // Stable identifier for idempotency
     const createdAtServer = new Date().toISOString();
 
-    // 4. Persistence to Sheet1
+    // 1. Persistence to Sheet1 (User Inbox)
     let sheet1Range = '';
     try {
       await ensureHeaders(sheets, spreadsheetId!);
@@ -105,33 +99,31 @@ export async function POST(req: Request) {
       console.error('Storage Error:', sheetError);
     }
 
-    // 5. Outbox & Routing
+    // 2. Outbox & Routing
     const isRoutable = classification.item_type === 'task' || classification.item_type === 'event';
     if (isRoutable) {
-      const outboxRange = await enqueueOutbox(sheets, spreadsheetId!, { text: cleanText, item_type: classification.item_type });
+      const outboxRange = await enqueueOutbox(sheets, spreadsheetId!, { 
+        text: cleanText, 
+        item_type: classification.item_type,
+        id 
+      });
       
-      if (chronosKey) {
-        try {
-          const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey);
-          forwarded = res.success;
-          forwardStatus = res.status;
-          forwardError = res.error;
+      // Attempt immediate forward
+      try {
+        console.log(`[Inbox] Forwarding routable thought to executor. ID: ${id}`);
+        const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey, id, chronosBaseUrl);
+        forwarded = res.success;
 
-          if (outboxRange) {
-            await updateOutboxRow(sheets, spreadsheetId!, outboxRange, { 
-              success: forwarded, 
-              status: forwardStatus, 
-              error: forwarded ? undefined : (forwardError || `HTTP ${forwardStatus}`)
-            });
-          }
-
-          // Update Sheet1 status to FORWARDED
-          if (forwarded && sheet1Range) {
-            await updateRowStatus(sheets, spreadsheetId!, sheet1Range, 'FORWARDED');
-          }
-        } catch (calError: any) {
-          forwardError = calError.message;
+        if (outboxRange) {
+          await updateOutboxRow(sheets, spreadsheetId!, outboxRange, res);
         }
+
+        // Update Sheet1 status to FORWARDED if successful
+        if (forwarded && sheet1Range) {
+          await updateRowStatus(sheets, spreadsheetId!, sheet1Range, 'FORWARDED');
+        }
+      } catch (calError: any) {
+        console.error('[Inbox] Forwarding failed:', calError.message);
       }
     }
 
@@ -145,6 +137,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
+    console.error('[Inbox] Critical Error:', error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }

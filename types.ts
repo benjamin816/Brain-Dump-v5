@@ -45,3 +45,18 @@ export interface GeminiNoteAnalysis {
   is_event: boolean;
   summary: string;
 }
+
+export interface ForwardResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: {
+    id?: string;
+    action?: string;
+    calendarId?: string;
+    start?: string;
+    end?: string;
+    date?: string;
+    [key: string]: any;
+  };
+}

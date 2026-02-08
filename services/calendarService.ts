@@ -1,38 +1,52 @@
+import { ForwardResponse } from '../types';
 
-const CALENDAR_AGENT_URL = "https://my-calendar-agent-v2.vercel.app/api/siri";
-
-export interface ForwardResponse {
-  success: boolean;
-  status?: number;
-  error?: string;
-}
-
-export const forwardToCalendar = async (rawText: string, apiKey: string): Promise<ForwardResponse> => {
+/**
+ * Forwards a note to the Calendar Agent Executor.
+ * Uses text/plain and includes an OUTBOX_ID for idempotency.
+ */
+export const forwardToCalendar = async (
+  rawText: string, 
+  apiKey: string, 
+  outboxId: string,
+  baseUrl?: string
+): Promise<ForwardResponse> => {
   try {
+    const finalBaseUrl = baseUrl || process.env.CALENDAR_AGENT_BASE_URL || "https://my-calendar-agent-v2.vercel.app";
+    const executorUrl = `${finalBaseUrl.replace(/\/$/, '')}/api/inbox`;
+    
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    const response = await fetch(CALENDAR_AGENT_URL, {
+    // Prepend idempotency key for the executor
+    const payload = `OUTBOX_ID: ${outboxId}\n---\n${rawText}`;
+
+    const response = await fetch(executorUrl, {
       method: "POST",
       headers: {
         "Content-Type": "text/plain",
         "x-chronos-key": apiKey
       },
-      body: rawText,
+      body: payload,
       signal: controller.signal
     });
 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
       return { 
         success: false, 
         status: response.status, 
-        error: `Calendar agent error: ${response.statusText}` 
+        error: `Calendar executor error (${response.status}): ${errorText.substring(0, 100)}` 
       };
     }
 
-    return { success: true, status: response.status };
+    const data = await response.json();
+    return { 
+      success: true, 
+      status: response.status,
+      data: data
+    };
   } catch (error: any) {
     const isTimeout = error.name === 'AbortError';
     return { 

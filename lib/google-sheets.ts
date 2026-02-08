@@ -7,8 +7,12 @@ const DEFAULT_CATEGORIES = [
   'admin', 'wishlist', 'other'
 ];
 
+// Expanded headers for detailed execution tracking
+// A: created_at, B: text, C: item_type, D: status, E: attempts, F: last_error, G: last_attempt_at, H: sent_at, I: id
+// J: remote_id, K: remote_action, L: remote_calendar_id, M: remote_start, N: remote_end, O: remote_raw_response
 const OUTBOX_HEADERS = [
-  'created_at', 'text', 'item_type', 'status', 'attempts', 'last_error', 'last_attempt_at', 'sent_at'
+  'created_at', 'text', 'item_type', 'status', 'attempts', 'last_error', 'last_attempt_at', 'sent_at', 
+  'id', 'remote_id', 'remote_action', 'remote_calendar_id', 'remote_start', 'remote_end', 'remote_raw_response'
 ];
 
 export async function getSheetsClient() {
@@ -43,12 +47,7 @@ export async function ensureHeaders(sheets: any, spreadsheetId: string) {
   }
 }
 
-/**
- * Updates the status (Column H) of a specific row range.
- * Useful for updating a row immediately after appending it.
- */
 export async function updateRowStatus(sheets: any, spreadsheetId: string, range: string, status: string) {
-  // Range is typically "Sheet1!A10:H10". We want to update only Column H of that row.
   const rowMatch = range.match(/\d+$/);
   if (!rowMatch) return;
   const rowNumber = rowMatch[0];
@@ -79,7 +78,7 @@ export async function ensureOutboxSheet(sheets: any, spreadsheetId: string) {
       
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: 'Outbox!A1:H1',
+        range: 'Outbox!A1:O1',
         valueInputOption: 'RAW',
         requestBody: {
           values: [OUTBOX_HEADERS]
@@ -91,29 +90,36 @@ export async function ensureOutboxSheet(sheets: any, spreadsheetId: string) {
   }
 }
 
-export async function enqueueOutbox(sheets: any, spreadsheetId: string, data: { text: string, item_type: string }) {
+export async function enqueueOutbox(sheets: any, spreadsheetId: string, data: { text: string, item_type: string, id: string }) {
   const now = new Date().toISOString();
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'Outbox!A:H',
+    range: 'Outbox!A:O',
     valueInputOption: 'RAW',
     requestBody: {
       values: [[
-        now,
-        data.text,
-        data.item_type,
-        'pending',
-        0,
-        '',
-        '',
-        ''
+        now,             // A: created_at
+        data.text,        // B: text
+        data.item_type,   // C: item_type
+        'pending',       // D: status
+        0,               // E: attempts
+        '',              // F: last_error
+        '',              // G: last_attempt_at
+        '',              // H: sent_at
+        data.id,         // I: id (OUTBOX_ID)
+        '', '', '', '', '', '' // J-O placeholders
       ]],
     },
   });
   return res.data.updates?.updatedRange;
 }
 
-export async function updateOutboxRow(sheets: any, spreadsheetId: string, range: string, result: { success: boolean, status?: number, error?: string }) {
+export async function updateOutboxRow(sheets: any, spreadsheetId: string, range: string, result: { 
+  success: boolean, 
+  status?: number, 
+  error?: string, 
+  data?: any 
+}) {
   const now = new Date().toISOString();
   const currentRes = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -122,14 +128,24 @@ export async function updateOutboxRow(sheets: any, spreadsheetId: string, range:
   
   const row = currentRes.data.values?.[0] || [];
   const currentAttempts = parseInt(row[4] || '0', 10);
+  const outboxId = row[8] || '';
 
   const updatedRow = [
-    row[0], row[1], row[2],
-    result.success ? 'sent' : 'failed',
-    currentAttempts + 1,
-    result.error || '',
-    now,
-    result.success ? now : ''
+    row[0], // created_at
+    row[1], // text
+    row[2], // item_type
+    result.success ? 'sent' : 'failed', // status
+    currentAttempts + 1, // attempts
+    result.error || '', // last_error
+    now, // last_attempt_at
+    result.success ? now : '', // sent_at
+    outboxId, // id
+    result.data?.id || '', // remote_id
+    result.data?.action || '', // remote_action
+    result.data?.calendarId || '', // remote_calendar_id
+    result.data?.start || result.data?.date || '', // remote_start
+    result.data?.end || '', // remote_end
+    result.data ? JSON.stringify(result.data).substring(0, 1000) : '' // remote_raw_response
   ];
 
   await sheets.spreadsheets.values.update({
