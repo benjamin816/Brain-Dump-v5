@@ -46,7 +46,6 @@ export default function Home() {
       const data = await res.json();
       if (data.ok && Array.isArray(data.categories)) {
         setCustomCategories(data.categories);
-        // Persist to local as cache
         localStorage.setItem('braindump_categories_v1', JSON.stringify(data.categories));
       }
     } catch (e) {
@@ -72,7 +71,6 @@ export default function Home() {
       } catch (e) { console.error("Trash restoration error", e); }
     }
 
-    // Load from cache first for immediate UI
     const cachedCats = localStorage.getItem('braindump_categories_v1');
     if (cachedCats) {
       try { setCustomCategories(JSON.parse(cachedCats)); } catch (e) {}
@@ -226,19 +224,33 @@ export default function Home() {
     }
   };
 
-  const categoryCounts = useMemo(() => {
+  // --- START MODIFIED LOGIC ---
+  // Only display notes with item_type 'idea'
+  const visibleIdeas = useMemo(() => {
     const list = currentView === 'trash' ? trash : notes;
-    const counts: any = { [Category.ALL]: list.length };
+    return list.filter(n => n.item_type?.toString().toLowerCase() === 'idea');
+  }, [notes, trash, currentView]);
+
+  const categoryCounts = useMemo(() => {
+    // Counts should only represent 'ideas' to match visible UI
+    const counts: any = { [Category.ALL]: visibleIdeas.length };
     customCategories.forEach(cat => {
-      counts[cat] = list.filter(n => n.category === cat).length;
+      counts[cat] = visibleIdeas.filter(n => n.category === cat).length;
     });
     return counts;
-  }, [notes, trash, currentView, customCategories]);
+  }, [visibleIdeas, customCategories]);
 
   const filteredNotes = useMemo(() => {
-    const list = currentView === 'trash' ? trash : notes;
-    return activeCategory === Category.ALL ? list : list.filter(n => n.category === activeCategory);
-  }, [notes, trash, activeCategory, currentView]);
+    // First filter by 'idea' (done in visibleIdeas), then by active category
+    return activeCategory === Category.ALL 
+      ? visibleIdeas 
+      : visibleIdeas.filter(n => n.category === activeCategory);
+  }, [visibleIdeas, activeCategory]);
+
+  const totalRawCount = useMemo(() => {
+    return (currentView === 'trash' ? trash : notes).length;
+  }, [notes, trash, currentView]);
+  // --- END MODIFIED LOGIC ---
 
   return (
     <main className="min-h-screen max-w-5xl mx-auto px-6 py-12 md:py-20 relative">
@@ -392,6 +404,12 @@ export default function Home() {
                 <i className="fa-solid fa-trash-can mr-2"></i> Archive
               </button>
             </div>
+
+            <div className="text-center">
+              <p className="text-[9px] font-mono font-black uppercase tracking-[0.2em] text-slate-500">
+                Showing {visibleIdeas.length} ideas <span className="mx-2 opacity-30">|</span> {totalRawCount} total entries synced
+              </p>
+            </div>
             
             <CategoryFilter 
               activeCategory={activeCategory} 
@@ -480,7 +498,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Version Footer */}
       <div className="fixed bottom-4 left-0 right-0 flex justify-center pointer-events-none opacity-20">
         <span className="text-[8px] font-black uppercase tracking-[0.8em] text-slate-500">v{pkg.version.split('.')[0]}</span>
       </div>
