@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-export async function classifyNote(text: string) {
+export async function classifyNote(text: string, categories: string[] = []) {
+  const categoryListStr = categories.length > 0 ? categories.join(', ') : "Work, Personal, Creative, Social, Health, Finance, Admin, or Other";
+  
   const fallback = {
     item_type: "idea",
     time_bucket: "none",
@@ -25,7 +27,7 @@ export async function classifyNote(text: string) {
       Requirements:
       1. item_type: Must be 'task' (something to do), 'event' (time-specific), 'idea' (concept/reflection), or 'important_info' (fact/data).
       2. is_event: Set to true if a specific date or time is mentioned (e.g., "5pm", "tomorrow", "Friday").
-      3. category: Assign to one of: Work, Personal, Creative, Social, Health, Finance, Admin, or Other.
+      3. category: Assign to one of these specific buckets: ${categoryListStr}.
       4. time_bucket: Extract the mentioned date/time as an ISO string if possible, or use "today", "this_week", "none".
       5. summary: A sharp 5-word summary for quick scanning.`,
       config: {

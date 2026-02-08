@@ -1,23 +1,25 @@
-
 import React from 'react';
 import { Category } from '../types';
 
 interface CategoryFilterProps {
-  activeCategory: Category;
-  onSelectCategory: (category: Category) => void;
-  counts: Record<Category, number>;
+  activeCategory: string;
+  categories: string[];
+  onSelectCategory: (category: string) => void;
+  counts: Record<string, number>;
 }
 
 export const CategoryFilter: React.FC<CategoryFilterProps> = ({ 
   activeCategory, 
+  categories,
   onSelectCategory,
   counts 
 }) => {
-  const categories = Object.values(Category);
+  // Always ensure 'All' is at the front
+  const displayCategories = [Category.ALL, ...categories.filter(c => c !== Category.ALL)];
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4">
-      {categories.map((cat) => (
+    <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4 w-full justify-center">
+      {displayCategories.map((cat) => (
         <button
           key={cat}
           onClick={() => onSelectCategory(cat)}

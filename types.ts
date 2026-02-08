@@ -20,7 +20,7 @@ export enum ItemType {
 export interface Note {
   id: string;
   text: string;
-  category: Category | string;
+  category: string;
   item_type: ItemType | string;
   created_at_client: string;
   created_at_server: string;
@@ -36,11 +36,11 @@ export interface TrashedNote extends Note {
   trashId: string;
 }
 
-export type ViewType = 'inbox' | 'trash';
+export type ViewType = 'inbox' | 'trash' | 'settings';
 
 export interface GeminiNoteAnalysis {
   item_type: ItemType;
-  category: Category;
+  category: string;
   time_bucket: string;
   is_event: boolean;
   summary: string;

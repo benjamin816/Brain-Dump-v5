@@ -32,11 +32,13 @@ export async function POST(req: Request) {
     const contentType = req.headers.get('content-type') || '';
     let text = '';
     let createdAtClient = new Date().toISOString();
+    let customCategories: string[] = [];
 
     if (contentType.includes('application/json')) {
       const body = await req.json();
       text = body.text || '';
       if (body.created_at) createdAtClient = body.created_at;
+      if (Array.isArray(body.categories)) customCategories = body.categories;
     } else {
       text = await req.text();
     }
@@ -45,8 +47,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Empty content' }, { status: 400 });
     }
 
-    // 1. AI Analysis
-    const classification = await classifyNote(text);
+    // 1. AI Analysis with dynamic categories if provided
+    const classification = await classifyNote(text, customCategories);
     const id = crypto.randomUUID();
     const createdAtServer = new Date().toISOString();
 
