@@ -8,13 +8,20 @@ interface NoteCardProps {
 }
 
 export const NoteCard: React.FC<NoteCardProps> = ({ note, onDelete }) => {
-  const formatDate = (dateStr: string) => {
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(dateStr));
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'No date';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return 'Invalid date';
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    } catch (e) {
+      return 'Invalid date';
+    }
   };
 
   const getCategoryColor = (cat: Category) => {
@@ -54,19 +61,19 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, onDelete }) => {
         </div>
         <div className="flex flex-col">
           <span className={`text-[10px] font-black uppercase tracking-wider ${getCategoryColor(note.category).split(' ')[0]}`}>
-            {note.category}
+            {note.category || 'Other'}
           </span>
           <span className="text-[10px] text-slate-500 font-mono">{formatDate(note.created_at_server)}</span>
         </div>
       </div>
 
       <p className="text-slate-100 text-lg leading-relaxed font-medium mb-6 whitespace-pre-wrap selection:bg-blue-500/50">
-        {note.text}
+        {note.text || 'Empty note content'}
       </p>
 
       <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500 uppercase tracking-widest">
         <i className="fa-solid fa-fingerprint"></i>
-        <span>{note.id.split('-')[0]}</span>
+        <span>{note.id ? note.id.split('-')[0] : 'N/A'}</span>
         {note.time_bucket && note.time_bucket !== 'none' && (
           <span className="ml-auto text-blue-400 flex items-center gap-1">
             <i className="fa-regular fa-clock"></i>
