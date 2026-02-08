@@ -1,7 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export async function classifyNote(text: string) {
   const fallback = {
     item_type: "idea",
@@ -12,6 +10,13 @@ export async function classifyNote(text: string) {
   };
 
   try {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.warn("API_KEY missing, using fallback classification.");
+      return fallback;
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Classify this note for a personal productivity system. 

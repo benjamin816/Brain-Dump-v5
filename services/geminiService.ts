@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Category, GeminiNoteAnalysis } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> => {
   const fallback: GeminiNoteAnalysis = {
     category: Category.OTHER,
@@ -11,6 +9,13 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
   };
 
   try {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.warn("API_KEY missing for analyzeNote, using fallback.");
+      return fallback;
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze the following note content. 
