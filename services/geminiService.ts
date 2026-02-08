@@ -1,17 +1,22 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { Category, GeminiNoteAnalysis } from "../types";
+import { Category, GeminiNoteAnalysis, ItemType } from "../types";
 
 export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> => {
+  // Fix: Object literal must match GeminiNoteAnalysis interface (added missing properties and corrected isEvent -> is_event)
   const fallback: GeminiNoteAnalysis = {
+    item_type: ItemType.IDEA,
     category: Category.OTHER,
-    isEvent: false,
+    time_bucket: 'none',
+    is_event: false,
     summary: content.substring(0, 50),
   };
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    // Guidelines: Use process.env.API_KEY exclusively
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      console.warn("GEMINI_API_KEY or API_KEY missing for analyzeNote, using fallback.");
+      console.warn("API_KEY missing for analyzeNote, using fallback.");
       return fallback;
     }
 
@@ -19,10 +24,11 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze the following note content. 
-      1. Determine its category from: ${Object.values(Category).filter(c => c !== Category.ALL).join(", ")}.
-      2. Check if it's a time-specific task, appointment, or event (e.g., "Meeting at 5pm", "Buy milk tomorrow morning", "Dr appointment Tuesday").
-      3. Provide a concise summary for the calendar if it is an event.
-      4. If it's an event, try to extract the time/date mentioned.
+      1. item_type: Must be 'task' (something to do), 'event' (time-specific), 'idea' (concept/reflection), or 'important_info' (fact/data).
+      2. category: Determine from: ${Object.values(Category).filter(c => c !== Category.ALL).join(", ")}.
+      3. is_event: Set to true if it describes a time-specific task, appointment, or event.
+      4. time_bucket: Extract the time/date mentioned or use "none".
+      5. summary: Provide a sharp, concise summary.
 
       Note Content: "${content}"`,
       config: {
@@ -30,11 +36,19 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            item_type: {
+              type: Type.STRING,
+              description: "The type of the item (task, event, idea, or important_info)",
+            },
             category: {
               type: Type.STRING,
               description: "The most appropriate category for the note.",
             },
-            isEvent: {
+            time_bucket: {
+              type: Type.STRING,
+              description: "Extracted time or timeframe information if available, else 'none'.",
+            },
+            is_event: {
               type: Type.BOOLEAN,
               description: "Whether the note describes a time-specific event or task.",
             },
@@ -42,12 +56,8 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
               type: Type.STRING,
               description: "A short, actionable summary of the note.",
             },
-            detectedTime: {
-              type: Type.STRING,
-              description: "Extracted time or date information if available.",
-            },
           },
-          required: ["category", "isEvent", "summary"],
+          required: ["item_type", "category", "time_bucket", "is_event", "summary"],
         },
       },
     });

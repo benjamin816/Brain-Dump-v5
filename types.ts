@@ -29,10 +29,6 @@ export interface Note {
   source?: string;
   isEvent?: boolean;
   forwardedToCalendar?: boolean;
-  metadata?: {
-    detectedTime?: string;
-    summary?: string;
-  };
 }
 
 export interface TrashedNote extends Note {
@@ -42,8 +38,9 @@ export interface TrashedNote extends Note {
 export type ViewType = 'inbox' | 'trash';
 
 export interface GeminiNoteAnalysis {
+  item_type: ItemType;
   category: Category;
-  isEvent: boolean;
+  time_bucket: string;
+  is_event: boolean;
   summary: string;
-  detectedTime?: string;
 }
