@@ -61,12 +61,13 @@ export default function Home() {
         await fetchNotes();
         setTimeout(() => setStatus(null), 3000);
       } else {
-        throw new Error(result.error);
+        throw new Error(result.error || "Sync failed.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Processing error:", error);
-      setStatus({ message: "Sync failed.", type: 'error' });
-      setTimeout(() => setStatus(null), 3000);
+      setStatus({ message: error.message || "Sync failed.", type: 'error' });
+      // Keep error message visible longer if it's a specific configuration error
+      setTimeout(() => setStatus(null), 5000);
     } finally {
       setIsProcessing(false);
     }
@@ -131,11 +132,11 @@ export default function Home() {
             disabled={isProcessing}
           />
           <div className="flex items-center justify-between px-6 pb-4">
-            <div className="flex-1">
+            <div className="flex-1 mr-4">
               {status && (
                 <div className={`flex items-center gap-2 animate-fade-in`}>
-                   <div className={`w-1.5 h-1.5 rounded-full ${status.type === 'error' ? 'bg-rose-500' : 'bg-indigo-500'} animate-pulse`} />
-                   <span className={`text-[11px] font-bold uppercase tracking-widest ${
+                   <div className={`shrink-0 w-1.5 h-1.5 rounded-full ${status.type === 'error' ? 'bg-rose-500' : 'bg-indigo-500'} animate-pulse`} />
+                   <span className={`text-[11px] font-bold uppercase tracking-widest break-words ${
                     status.type === 'error' ? 'text-rose-400' : 'text-indigo-400'
                   }`}>
                     {status.message}

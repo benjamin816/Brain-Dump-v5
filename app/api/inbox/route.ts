@@ -11,22 +11,22 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    // 1. Env Validation - Fail gracefully at request time, not build time
+    // 1. Env Validation
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
     const sheetEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const sheetKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-    const geminiKey = process.env.API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-    if (!spreadsheetId || !sheetEmail || !sheetKey || !geminiKey) {
-      console.error('Missing configuration:', { 
-        hasSpreadsheetId: !!spreadsheetId, 
-        hasEmail: !!sheetEmail, 
-        hasKey: !!sheetKey, 
-        hasGeminiKey: !!geminiKey 
-      });
+    const missingVars = [];
+    if (!spreadsheetId) missingVars.push('GOOGLE_SHEETS_ID');
+    if (!sheetEmail) missingVars.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+    if (!sheetKey) missingVars.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
+    if (!geminiKey) missingVars.push('GEMINI_API_KEY/API_KEY');
+
+    if (missingVars.length > 0) {
       return NextResponse.json({ 
         ok: false, 
-        error: 'System configuration missing (Environment Variables)' 
+        error: `Missing env vars: ${missingVars.join(', ')}` 
       }, { status: 500 });
     }
 
@@ -63,12 +63,13 @@ export async function POST(req: Request) {
     }
 
     // 4. Persistent Storage (Google Sheets)
+    let sheetWriteOk = false;
     try {
       const sheets = await getSheetsClient();
-      await ensureHeaders(sheets, spreadsheetId);
+      await ensureHeaders(sheets, spreadsheetId!);
 
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
+      const appendRes = await sheets.spreadsheets.values.append({
+        spreadsheetId: spreadsheetId!,
         range: 'Sheet1!A:H',
         valueInputOption: 'RAW',
         requestBody: {
@@ -84,20 +85,25 @@ export async function POST(req: Request) {
           ]],
         },
       });
+
+      if (appendRes.status === 200) {
+        sheetWriteOk = true;
+        console.log(`Sheets append OK: ${appendRes.data.updates?.updatedRange}`);
+      }
     } catch (sheetError: any) {
       console.error('Storage Error:', sheetError);
-      // We still return 500 if the primary storage fails
-      return NextResponse.json({ ok: false, error: 'Failed to persist note' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: `Failed to persist note: ${sheetError.message || 'Unknown storage error'}` }, { status: 500 });
     }
 
     return NextResponse.json({
       ok: true,
       id,
       classification,
-      calendar_routed: forwardedToCalendar
+      calendar_routed: forwardedToCalendar,
+      sheet_write_ok: sheetWriteOk
     });
   } catch (error: any) {
     console.error('Inbox API Handler Error:', error);
-    return NextResponse.json({ ok: false, error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: `Internal Server Error: ${error.message || 'Unknown'}` }, { status: 500 });
   }
 }

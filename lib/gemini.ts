@@ -10,9 +10,9 @@ export async function classifyNote(text: string) {
   };
 
   try {
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
-      console.warn("API_KEY missing, using fallback classification.");
+      console.warn("GEMINI_API_KEY or API_KEY missing, using fallback classification.");
       return fallback;
     }
 
