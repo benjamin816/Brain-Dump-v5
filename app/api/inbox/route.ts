@@ -1,12 +1,9 @@
-
 import { NextResponse } from 'next/server';
 import { classifyNote } from '@/lib/gemini';
 import { getSheetsClient, ensureHeaders } from '@/lib/google-sheets';
 import { forwardToCalendar } from '@/services/calendarService';
 
 export const runtime = 'nodejs';
-
-let hasLoggedSchema = false;
 
 export async function GET() {
   return NextResponse.json({ ok: true, message: "inbox live" });
@@ -17,13 +14,13 @@ export async function POST(req: Request) {
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
     const sheetEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const sheetKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-    const apiKey = process.env.API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
     const missingVars = [];
     if (!spreadsheetId) missingVars.push('GOOGLE_SHEETS_ID');
     if (!sheetEmail) missingVars.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
     if (!sheetKey) missingVars.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
-    if (!apiKey) missingVars.push('API_KEY');
+    if (!geminiKey) missingVars.push('GEMINI_API_KEY');
 
     if (missingVars.length > 0) {
       return NextResponse.json({ 

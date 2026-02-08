@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -57,31 +56,16 @@ export default function Home() {
       const data = await res.json();
       
       if (data.ok && Array.isArray(data.entries)) {
-        const mapped: Note[] = data.entries.map((item: any) => {
-          // Normalize various response shapes from Google Sheets
-          if (Array.isArray(item)) {
-            return {
-              text: item[0],
-              created_at_client: item[1],
-              created_at_server: item[2],
-              item_type: item[3],
-              time_bucket: item[4],
-              category: item[5],
-              id: item[6],
-              source: item[7]
-            } as Note;
-          }
-          return {
-            id: item.id || item.uuid,
-            text: item.text || item.content,
-            created_at_client: item.created_at_client || item.created_at,
-            created_at_server: item.created_at_server || item.received_at,
-            item_type: item.item_type,
-            time_bucket: item.time_bucket,
-            category: item.category || item.categories,
-            source: item.source || item.status
-          } as Note;
-        });
+        const mapped: Note[] = data.entries.map((item: any) => ({
+          id: item.id || item.uuid,
+          text: item.text || item.content,
+          created_at_client: item.created_at_client || item.created_at,
+          created_at_server: item.created_at_server || item.received_at,
+          item_type: item.item_type,
+          time_bucket: item.time_bucket,
+          category: item.category || item.categories,
+          source: item.source || item.status
+        }));
 
         const sorted = mapped.sort((a, b) => {
           const timeA = new Date(a.created_at_server || a.created_at_client || 0).getTime();
@@ -111,7 +95,7 @@ export default function Home() {
     if (!text.trim() || isProcessing) return false;
     
     setIsProcessing(true);
-    setStatus({ message: "AI Processing...", type: 'info' });
+    if (!textToProcess) setStatus({ message: "AI Processing...", type: 'info' });
     
     try {
       const response = await fetch('/api/inbox', {
@@ -195,21 +179,22 @@ export default function Home() {
     if (!confirm('Move this entry to Trash?')) return;
     
     const id = note.id;
-    if (!id) {
-        // Handle legacy or non-synced items
-        const trashedItem: TrashedNote = { ...note, deletedAt: new Date().toISOString() };
+    const trashedItem: TrashedNote = { 
+      ...note, 
+      deletedAt: new Date().toISOString(),
+      trashId: crypto.randomUUID() 
+    };
+
+    if (!id || id.startsWith('legacy-')) {
         saveTrashToLocal([trashedItem, ...trash]);
-        setNotes(prev => prev.filter(n => n !== note));
+        setNotes(prev => prev.filter(n => n.id !== id && n.text !== note.text));
         return;
     }
 
     try {
       const res = await fetch(`/api/entries/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        const trashedItem: TrashedNote = { ...note, deletedAt: new Date().toISOString() };
         saveTrashToLocal([trashedItem, ...trash]);
-        
-        // Immediate UI Update
         setNotes(prev => prev.filter(n => n.id !== id));
         setStatus({ message: "Moved to Trash", type: 'info' });
         setTimeout(() => setStatus(null), 2000);
@@ -226,7 +211,7 @@ export default function Home() {
     setStatus({ message: "Restoring entry...", type: 'info' });
     const success = await processNewNote(trashedNote.text);
     if (success) {
-      const newTrash = trash.filter(t => t.id !== trashedNote.id || (t.id === undefined && t.text !== trashedNote.text));
+      const newTrash = trash.filter(t => t.trashId !== trashedNote.trashId);
       saveTrashToLocal(newTrash);
       setStatus({ message: "Entry restored to Inbox", type: 'success' });
     }
@@ -234,7 +219,7 @@ export default function Home() {
 
   const permanentlyDeleteFromTrash = (trashedNote: TrashedNote) => {
     if (!confirm('Permanently delete this from Local Storage? This cannot be undone.')) return;
-    const newTrash = trash.filter(t => t.id !== trashedNote.id || (t.id === undefined && t.text !== trashedNote.text));
+    const newTrash = trash.filter(t => t.trashId !== trashedNote.trashId);
     saveTrashToLocal(newTrash);
   };
 
@@ -429,7 +414,7 @@ export default function Home() {
         ) : filteredNotes.length > 0 ? (
           filteredNotes.map((note) => (
             <div 
-              key={note.id || `local-${note.text.substring(0,10)}-${note.created_at_client}`} 
+              key={currentView === 'trash' ? (note as TrashedNote).trashId : (note.id || `local-${note.created_at_client}`)} 
               className={`glass group p-8 md:p-10 rounded-[2.5rem] border-white/5 relative transition-all animate-fade-in ${
                 editingId === note.id ? "ring-2 ring-indigo-500/40 bg-indigo-500/5 shadow-2xl" : "hover:-translate-y-1.5 hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-black/40"
               }`}

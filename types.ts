@@ -1,4 +1,3 @@
-
 export enum Category {
   ALL = 'All',
   WORK = 'Work',
@@ -33,6 +32,7 @@ export interface Note {
 
 export interface TrashedNote extends Note {
   deletedAt: string;
+  trashId: string;
 }
 
 export type ViewType = 'inbox' | 'trash';

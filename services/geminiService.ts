@@ -1,9 +1,7 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Category, GeminiNoteAnalysis, ItemType } from "../types";
 
 export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> => {
-  // Fix: Object literal must match GeminiNoteAnalysis interface (added missing properties and corrected isEvent -> is_event)
   const fallback: GeminiNoteAnalysis = {
     item_type: ItemType.IDEA,
     category: Category.OTHER,
@@ -13,10 +11,9 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
   };
 
   try {
-    // Guidelines: Use process.env.API_KEY exclusively
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
-      console.warn("API_KEY missing for analyzeNote, using fallback.");
+      console.warn("API key missing for analyzeNote, using fallback.");
       return fallback;
     }
 
@@ -74,7 +71,6 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
 
     const analysis = JSON.parse(trimmedText) as GeminiNoteAnalysis;
     
-    // Ensure the category is valid
     if (!Object.values(Category).includes(analysis.category as Category)) {
       analysis.category = Category.OTHER;
     }
