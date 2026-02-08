@@ -35,6 +35,12 @@ export interface Note {
   };
 }
 
+export interface TrashedNote extends Note {
+  deletedAt: string;
+}
+
+export type ViewType = 'inbox' | 'trash';
+
 export interface GeminiNoteAnalysis {
   category: Category;
   isEvent: boolean;
