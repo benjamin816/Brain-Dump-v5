@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -7,11 +8,12 @@ import { CategoryFilter } from '@/components/CategoryFilter';
 import pkg from '@/package.json';
 
 const TRASH_STORAGE_KEY = 'braindump_trash_v1';
-const CATEGORIES_STORAGE_KEY = 'braindump_categories_v1';
 const PURGE_DAYS = 7;
 
 const DEFAULT_CATEGORIES = [
-  'Work', 'Personal', 'Creative', 'Health', 'Finance', 'Admin', 'Social', 'Other'
+  'personal', 'work', 'creative', 'social', 'health', 
+  'money', 'food', 'home', 'travel', 'learning', 
+  'admin', 'wishlist', 'other'
 ];
 
 export default function Home() {
@@ -22,6 +24,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<string>(Category.ALL);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingCats, setIsLoadingCats] = useState(true);
   const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
 
@@ -34,6 +37,24 @@ export default function Home() {
   const [editValue, setEditValue] = useState('');
   const [editCategory, setEditCategory] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Fetch Categories from Server
+  const fetchCategories = useCallback(async () => {
+    setIsLoadingCats(true);
+    try {
+      const res = await fetch('/api/config/categories');
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.categories)) {
+        setCustomCategories(data.categories);
+        // Persist to local as cache
+        localStorage.setItem('braindump_categories_v1', JSON.stringify(data.categories));
+      }
+    } catch (e) {
+      console.error("Failed to fetch categories", e);
+    } finally {
+      setIsLoadingCats(false);
+    }
+  }, []);
 
   // Load Trash and Categories
   useEffect(() => {
@@ -51,21 +72,37 @@ export default function Home() {
       } catch (e) { console.error("Trash restoration error", e); }
     }
 
-    const savedCats = localStorage.getItem(CATEGORIES_STORAGE_KEY);
-    if (savedCats) {
-      try {
-        setCustomCategories(JSON.parse(savedCats));
-      } catch (e) { console.error("Category restoration error", e); }
+    // Load from cache first for immediate UI
+    const cachedCats = localStorage.getItem('braindump_categories_v1');
+    if (cachedCats) {
+      try { setCustomCategories(JSON.parse(cachedCats)); } catch (e) {}
     }
-  }, []);
+    
+    fetchCategories();
+  }, [fetchCategories]);
 
-  const saveCategories = (cats: string[]) => {
+  const saveCategories = async (cats: string[]) => {
     setCustomCategories(cats);
-    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(cats));
+    setIsLoadingCats(true);
+    try {
+      const res = await fetch('/api/config/categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories: cats })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        localStorage.setItem('braindump_categories_v1', JSON.stringify(cats));
+      }
+    } catch (e) {
+      setStatus({ message: "Failed to save categories to cloud", type: 'error' });
+    } finally {
+      setIsLoadingCats(false);
+    }
   };
 
   const addCategory = () => {
-    const trimmed = newCatInput.trim();
+    const trimmed = newCatInput.trim().toLowerCase();
     if (trimmed && !customCategories.includes(trimmed)) {
       saveCategories([...customCategories, trimmed]);
       setNewCatInput('');
@@ -125,8 +162,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           text, 
-          created_at: new Date().toISOString(),
-          categories: customCategories 
+          created_at: new Date().toISOString()
         }),
       });
 
@@ -211,7 +247,10 @@ export default function Home() {
       <header className="mb-12 text-center animate-fade-in relative">
         <div className="absolute top-0 right-0">
           <button 
-            onClick={() => setCurrentView(currentView === 'settings' ? 'inbox' : 'settings')}
+            onClick={() => {
+               if (currentView !== 'settings') fetchCategories();
+               setCurrentView(currentView === 'settings' ? 'inbox' : 'settings');
+            }}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all ${currentView === 'settings' ? 'bg-indigo-500 border-indigo-400 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10'}`}
           >
             <i className={`fa-solid ${currentView === 'settings' ? 'fa-xmark' : 'fa-gear'}`}></i>
@@ -236,11 +275,13 @@ export default function Home() {
           <div className="glass rounded-[3.5rem] p-12 border-white/10 shadow-3xl">
             <div className="flex items-center gap-6 mb-12">
                <div className="w-16 h-16 rounded-[2rem] bg-indigo-500 flex items-center justify-center shadow-2xl shadow-indigo-500/40">
-                 <i className="fa-solid fa-sliders text-2xl text-white"></i>
+                 <i className={`fa-solid ${isLoadingCats ? 'fa-circle-notch fa-spin' : 'fa-sliders'} text-2xl text-white`}></i>
                </div>
                <div>
                  <h2 className="text-4xl font-black tracking-tight text-white leading-none">Settings</h2>
-                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mt-2">Adjust your intelligence parameters</p>
+                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mt-2">
+                   {isLoadingCats ? 'Synchronizing with Neural Core...' : 'Adjust your intelligence parameters'}
+                 </p>
                </div>
             </div>
 
@@ -258,10 +299,12 @@ export default function Home() {
                     placeholder="Add new category..."
                     className="flex-1 bg-slate-900/50 border border-white/5 rounded-2xl px-6 py-4 text-white placeholder:text-slate-700 outline-none focus:ring-2 ring-indigo-500/40 transition-all"
                     onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+                    disabled={isLoadingCats}
                   />
                   <button 
                     onClick={addCategory}
-                    className="bg-white text-slate-900 px-8 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl"
+                    disabled={isLoadingCats || !newCatInput.trim()}
+                    className="bg-white text-slate-900 px-8 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl disabled:opacity-20"
                   >
                     Add
                   </button>
@@ -270,9 +313,10 @@ export default function Home() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {customCategories.map(cat => (
                     <div key={cat} className="group flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
-                      <span className="text-sm font-bold text-slate-200">{cat}</span>
+                      <span className="text-sm font-bold text-slate-200 capitalize">{cat}</span>
                       <button 
                         onClick={() => removeCategory(cat)}
+                        disabled={isLoadingCats}
                         className="opacity-0 group-hover:opacity-100 p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
                       >
                         <i className="fa-solid fa-trash-can text-xs"></i>

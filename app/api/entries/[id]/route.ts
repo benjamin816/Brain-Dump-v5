@@ -98,7 +98,8 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ ok: false, error: 'Entry not found' }, { status: 404 });
     }
 
-    const sheetId = await getSheetId(sheets, spreadsheetId);
+    // Fix: Added missing 'Sheet1' argument to getSheetId
+    const sheetId = await getSheetId(sheets, spreadsheetId, 'Sheet1');
     if (sheetId === undefined || sheetId === null) {
       return NextResponse.json({ ok: false, error: 'Could not resolve sheet ID' }, { status: 500 });
     }
