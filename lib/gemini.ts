@@ -42,9 +42,10 @@ export async function classifyNote(text: string, categories: string[] = []): Pro
   };
 
   try {
-    const apiKey = process.env.API_KEY;
+    // Standardize Gemini key lookup: Primary GEMINI_API_KEY, Fallback API_KEY
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
-      console.warn("Gemini API key (API_KEY) missing.");
+      console.warn("Gemini API key (GEMINI_API_KEY or API_KEY) missing.");
       return getFallback();
     }
 

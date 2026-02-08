@@ -10,17 +10,28 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  let parsedFrom: 'urlencoded' | 'json' | 'rawFallback' | 'unknown' = 'unknown';
+
   try {
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
     const sheetEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const sheetKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-    const geminiKey = process.env.API_KEY;
+    // Standardize Gemini key lookup: Primary GEMINI_API_KEY, Fallback API_KEY
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-    // Basic config validation
-    if (!spreadsheetId || !sheetEmail || !sheetKey || !geminiKey) {
+    // Detailed missing environment variable check
+    const missingEnv: string[] = [];
+    if (!spreadsheetId) missingEnv.push('GOOGLE_SHEETS_ID');
+    if (!sheetEmail) missingEnv.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+    if (!sheetKey) missingEnv.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
+    if (!geminiKey) missingEnv.push('GEMINI_API_KEY');
+
+    if (missingEnv.length > 0) {
       return NextResponse.json({ 
         ok: false, 
-        error: 'Missing environment configuration (Sheets or Gemini keys)' 
+        error: 'Missing environment configuration',
+        missingEnv,
+        parsedFrom
       }, { status: 500 });
     }
 
@@ -30,7 +41,6 @@ export async function POST(req: Request) {
 
     let text = '';
     let createdAtClient = new Date().toISOString();
-    let parsedFrom: 'urlencoded' | 'json' | 'rawFallback' | 'unknown' = 'unknown';
 
     // 1. Parsing Logic
     if (contentType.includes('application/x-www-form-urlencoded') || rawTrim.includes('=')) {
@@ -64,7 +74,11 @@ export async function POST(req: Request) {
     }
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ ok: false, error: 'Missing text' }, { status: 400 });
+      return NextResponse.json({ 
+        ok: false, 
+        error: 'Missing text',
+        parsedFrom
+      }, { status: 400 });
     }
 
     const cleanText = text.trim();
@@ -73,7 +87,7 @@ export async function POST(req: Request) {
     // 2. Load live categories from Config sheet
     let liveCategories: string[] = [];
     try {
-      liveCategories = await getCategoriesFromSheet(sheets, spreadsheetId);
+      liveCategories = await getCategoriesFromSheet(sheets, spreadsheetId!);
     } catch (catErr) {
       console.warn('Failed to fetch categories from Config sheet, falling back to defaults.');
       liveCategories = ['personal', 'work', 'other'];
@@ -98,9 +112,9 @@ export async function POST(req: Request) {
     // 5. Persistent Storage (Google Sheets)
     let sheetWriteOk = false;
     try {
-      await ensureHeaders(sheets, spreadsheetId);
+      await ensureHeaders(sheets, spreadsheetId!);
       const appendRes = await sheets.spreadsheets.values.append({
-        spreadsheetId: spreadsheetId,
+        spreadsheetId: spreadsheetId!,
         range: 'Sheet1!A:H',
         valueInputOption: 'RAW',
         requestBody: {
@@ -122,7 +136,11 @@ export async function POST(req: Request) {
       }
     } catch (sheetError: any) {
       console.error('Storage Error:', sheetError);
-      return NextResponse.json({ ok: false, error: `Storage failure: ${sheetError.message}` }, { status: 500 });
+      return NextResponse.json({ 
+        ok: false, 
+        error: `Storage failure: ${sheetError.message}`,
+        parsedFrom
+      }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -145,6 +163,10 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error('Inbox API Handler Critical Error:', error);
-    return NextResponse.json({ ok: false, error: `Internal Server Error: ${error.message}` }, { status: 500 });
+    return NextResponse.json({ 
+      ok: false, 
+      error: `Internal Server Error: ${error.message}`,
+      parsedFrom
+    }, { status: 500 });
   }
 }
