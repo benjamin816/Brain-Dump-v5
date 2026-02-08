@@ -11,22 +11,16 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
   };
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      console.warn("API key missing for analyzeNote, using fallback.");
+      console.warn("API_KEY missing for analyzeNote, using fallback.");
       return fallback;
     }
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Analyze the following note content. 
-      1. item_type: Must be 'task' (something to do), 'event' (time-specific), 'idea' (concept/reflection), or 'important_info' (fact/data).
-      2. category: Determine from: ${Object.values(Category).filter(c => c !== Category.ALL).join(", ")}.
-      3. is_event: Set to true if it describes a time-specific task, appointment, or event.
-      4. time_bucket: Extract the time/date mentioned or use "none".
-      5. summary: Provide a sharp, concise summary.
-
+      contents: `Analyze the following note content for categorization and extraction.
       Note Content: "${content}"`,
       config: {
         responseMimeType: "application/json",
@@ -35,23 +29,23 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
           properties: {
             item_type: {
               type: Type.STRING,
-              description: "The type of the item (task, event, idea, or important_info)",
+              description: "task, event, idea, or important_info",
             },
             category: {
               type: Type.STRING,
-              description: "The most appropriate category for the note.",
+              description: "Work, Personal, Creative, Health, Finance, Admin, Social, or Other.",
             },
             time_bucket: {
               type: Type.STRING,
-              description: "Extracted time or timeframe information if available, else 'none'.",
+              description: "Timeframe or 'none'",
             },
             is_event: {
               type: Type.BOOLEAN,
-              description: "Whether the note describes a time-specific event or task.",
+              description: "Is this time-specific?",
             },
             summary: {
               type: Type.STRING,
-              description: "A short, actionable summary of the note.",
+              description: "Actionable summary.",
             },
           },
           required: ["item_type", "category", "time_bucket", "is_event", "summary"],
@@ -60,16 +54,9 @@ export const analyzeNote = async (content: string): Promise<GeminiNoteAnalysis> 
     });
 
     const rawText = response.text;
-    if (!rawText) {
-      throw new Error("No text content returned from Gemini service.");
-    }
+    if (!rawText) throw new Error("Empty response");
 
-    const trimmedText = rawText.trim();
-    if (!trimmedText) {
-      throw new Error("Empty text content returned from Gemini service.");
-    }
-
-    const analysis = JSON.parse(trimmedText) as GeminiNoteAnalysis;
+    const analysis = JSON.parse(rawText.trim()) as GeminiNoteAnalysis;
     
     if (!Object.values(Category).includes(analysis.category as Category)) {
       analysis.category = Category.OTHER;

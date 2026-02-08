@@ -10,10 +10,9 @@ export async function classifyNote(text: string) {
   };
 
   try {
-    // Standardize Gemini env var usage: GEMINI_API_KEY (primary), API_KEY (fallback)
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      console.warn("Gemini API key missing, using fallback classification.");
+      console.warn("Gemini API key (API_KEY) missing, using fallback classification.");
       return fallback;
     }
 

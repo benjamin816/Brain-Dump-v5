@@ -28,6 +28,7 @@ export interface Note {
   source?: string;
   isEvent?: boolean;
   forwardedToCalendar?: boolean;
+  status?: string; // e.g., 'FORWARDED', 'LOCAL'
 }
 
 export interface TrashedNote extends Note {
