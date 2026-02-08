@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { classifyNote } from '@/lib/gemini';
-import { getSheetsClient, ensureHeaders, getCategoriesFromSheet } from '@/lib/google-sheets';
+import { getSheetsClient, ensureHeaders, getCategoriesFromSheet, ensureOutboxSheet, enqueueOutbox, updateOutboxRow, updateRowStatus } from '@/lib/google-sheets';
 import { forwardToCalendar, ForwardResponse } from '@/services/calendarService';
 
 export const runtime = 'nodejs';
@@ -22,20 +22,8 @@ export async function POST(req: Request) {
     const apiKey = process.env.API_KEY;
     const chronosKey = process.env.CHRONOS_SIRI_KEY;
 
-    // Detailed missing environment variable check
-    const missingEnv: string[] = [];
-    if (!spreadsheetId) missingEnv.push('GOOGLE_SHEETS_ID');
-    if (!sheetEmail) missingEnv.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
-    if (!sheetKey) missingEnv.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
-    if (!apiKey) missingEnv.push('API_KEY');
-
-    if (missingEnv.length > 0) {
-      return NextResponse.json({ 
-        ok: false, 
-        error: 'Missing environment configuration',
-        missingEnv,
-        parsedFrom
-      }, { status: 500 });
+    if (!spreadsheetId || !sheetEmail || !sheetKey || !apiKey) {
+      return NextResponse.json({ ok: false, error: 'Missing environment configuration' }, { status: 500 });
     }
 
     const contentType = (req.headers.get('content-type') || '').toLowerCase();
@@ -45,24 +33,20 @@ export async function POST(req: Request) {
     let text = '';
     let createdAtClient = new Date().toISOString();
 
-    // 1. Parsing Logic for various Webhook formats (Siri Shortcuts, IFTTT, Zapier)
     if (contentType.includes('application/x-www-form-urlencoded') || rawTrim.includes('=')) {
       const params = new URLSearchParams(rawTrim);
-      const foundText = params.get("text") || params.get("value") || params.get("Value") || 
-                        params.get("note") || params.get("input") || params.get("body");
-      
+      const foundText = params.get("text") || params.get("value") || params.get("Value") || params.get("note");
       if (foundText) {
         text = foundText;
         parsedFrom = 'urlencoded';
-        const clientDate = params.get('created_at');
-        if (clientDate) createdAtClient = clientDate;
+        if (params.get('created_at')) createdAtClient = params.get('created_at')!;
       }
     }
 
     if (!text && (contentType.includes('application/json') || rawTrim.startsWith('{'))) {
       try {
         const body = JSON.parse(rawTrim);
-        const foundText = body.text || body.value || body.note || body.input || body.body;
+        const foundText = body.text || body.value || body.note;
         if (foundText) {
           text = foundText;
           parsedFrom = 'json';
@@ -77,50 +61,26 @@ export async function POST(req: Request) {
     }
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ 
-        ok: false, 
-        error: 'Missing text',
-        parsedFrom
-      }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Missing text' }, { status: 400 });
     }
 
     const cleanText = text.trim();
     const sheets = await getSheetsClient();
+    await ensureOutboxSheet(sheets, spreadsheetId!);
 
-    // 2. Load live categories from Config sheet
-    let liveCategories: string[] = [];
+    let liveCategories = [];
     try {
       liveCategories = await getCategoriesFromSheet(sheets, spreadsheetId!);
-    } catch (catErr) {
-      console.warn('Failed to fetch categories from Config sheet, falling back to defaults.');
+    } catch (e) {
       liveCategories = ['personal', 'work', 'other'];
     }
 
-    // 3. AI Analysis using optimized classifier
     const classification = await classifyNote(cleanText, liveCategories);
     const id = crypto.randomUUID();
     const createdAtServer = new Date().toISOString();
 
-    // 4. Calendar Routing Logic (Forward tasks and events out of the notes inbox)
-    const shouldForward = classification.item_type === 'task' || classification.item_type === 'event' || classification.is_event;
-    
-    if (shouldForward) {
-      if (!chronosKey) {
-        forwardError = "Missing CHRONOS_SIRI_KEY";
-      } else {
-        try {
-          const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey);
-          forwarded = res.success;
-          forwardStatus = res.status;
-          forwardError = res.error;
-        } catch (calError: any) {
-          forwardError = calError.message || "Failed to call calendar service";
-        }
-      }
-    }
-
-    // 5. Persistent Storage (Google Sheets)
-    let sheetWriteOk = false;
+    // 4. Persistence to Sheet1
+    let sheet1Range = '';
     try {
       await ensureHeaders(sheets, spreadsheetId!);
       const appendRes = await sheets.spreadsheets.values.append({
@@ -136,53 +96,55 @@ export async function POST(req: Request) {
             classification.time_bucket,
             classification.category,
             id,
-            forwarded ? 'FORWARDED' : 'LOCAL'
+            'LOCAL'
           ]],
         },
       });
-
-      if (appendRes.status === 200) {
-        sheetWriteOk = true;
-      }
-    } catch (sheetError: any) {
+      sheet1Range = appendRes.data.updates?.updatedRange || '';
+    } catch (sheetError) {
       console.error('Storage Error:', sheetError);
-      return NextResponse.json({ 
-        ok: false, 
-        error: `Storage failure: ${sheetError.message}`,
-        parsedFrom,
-        forwarded,
-        forwardStatus,
-        forwardError
-      }, { status: 500 });
+    }
+
+    // 5. Outbox & Routing
+    const isRoutable = classification.item_type === 'task' || classification.item_type === 'event';
+    if (isRoutable) {
+      const outboxRange = await enqueueOutbox(sheets, spreadsheetId!, { text: cleanText, item_type: classification.item_type });
+      
+      if (chronosKey) {
+        try {
+          const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey);
+          forwarded = res.success;
+          forwardStatus = res.status;
+          forwardError = res.error;
+
+          if (outboxRange) {
+            await updateOutboxRow(sheets, spreadsheetId!, outboxRange, { 
+              success: forwarded, 
+              status: forwardStatus, 
+              error: forwarded ? undefined : (forwardError || `HTTP ${forwardStatus}`)
+            });
+          }
+
+          // Update Sheet1 status to FORWARDED
+          if (forwarded && sheet1Range) {
+            await updateRowStatus(sheets, spreadsheetId!, sheet1Range, 'FORWARDED');
+          }
+        } catch (calError: any) {
+          forwardError = calError.message;
+        }
+      }
     }
 
     return NextResponse.json({
       ok: true,
       id,
-      classification: {
-        item_type: classification.item_type,
-        category: classification.category,
-        time_bucket: classification.time_bucket,
-        is_event: classification.is_event,
-        summary: classification.summary
-      },
+      classification,
       calendar_routed: forwarded,
       forwarded,
-      forwardStatus,
-      forwardError,
-      sheet_write_ok: sheetWriteOk,
       parsedFrom
     });
 
   } catch (error: any) {
-    console.error('Inbox API Handler Critical Error:', error);
-    return NextResponse.json({ 
-      ok: false, 
-      error: `Internal Server Error: ${error.message}`,
-      parsedFrom,
-      forwarded,
-      forwardStatus,
-      forwardError
-    }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }
