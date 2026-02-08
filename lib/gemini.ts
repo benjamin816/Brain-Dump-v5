@@ -42,16 +42,14 @@ export async function classifyNote(text: string, categories: string[] = []): Pro
   };
 
   try {
-    // Standardize Gemini key lookup: Primary GEMINI_API_KEY, Fallback API_KEY
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-    if (!apiKey) {
-      console.warn("Gemini API key (GEMINI_API_KEY or API_KEY) missing.");
+    // Requirement: Must use process.env.API_KEY exclusively
+    if (!process.env.API_KEY) {
+      console.warn("API_KEY missing.");
       return getFallback();
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Explicit instructions for classification types
     const systemPrompt = `You are a high-performance productivity assistant.
 Classify the user's note based on these rules:
 
@@ -79,6 +77,8 @@ Return ONLY JSON. No markdown backticks.`;
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
+        // Optimize for webhook latency (Siri timeouts)
+        thinkingConfig: { thinkingBudget: 0 },
         responseSchema: {
           type: Type.OBJECT,
           properties: {
