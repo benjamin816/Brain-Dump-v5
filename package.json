@@ -1,5 +1,5 @@
-
 {
+  "//": "DO NOT ADD VITE. Next.js only. Vercel uses next build.",
   "name": "braindump-backend",
   "version": "1.0.0",
   "scripts": {

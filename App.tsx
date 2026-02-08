@@ -1,2 +1,1 @@
-// DEPRECATED: This project has migrated to Next.js. See app/page.tsx
-export default function App() { return null; }
+// DELETED: Obsolete Vite artifact. Project is strictly Next.js. Logic is in app/page.tsx

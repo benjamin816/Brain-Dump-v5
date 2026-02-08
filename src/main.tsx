@@ -1,0 +1,1 @@
+// DELETED: Obsolete Vite artifact.

@@ -1,0 +1,1 @@
+// DELETED: This project is strictly Next.js. DO NOT REINTRODUCE VITE.

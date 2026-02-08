@@ -1,1 +1,1 @@
-// DEPRECATED: This project has migrated to Next.js. See app/page.tsx
+// DELETED: Obsolete Vite artifact. Project is strictly Next.js. Logic is in app/page.tsx
