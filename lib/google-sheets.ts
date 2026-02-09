@@ -11,11 +11,13 @@ const DEFAULT_CATEGORIES = [
  * Outbox Headers Mapping:
  * 0: created_at, 1: text, 2: item_type, 3: status, 4: attempts, 5: last_error, 
  * 6: last_attempt_at, 7: sent_at, 8: id (OUTBOX_ID), 9: remote_id, 10: remote_action, 
- * 11: remote_calendar_id, 12: remote_start, 13: remote_end, 14: remote_raw_response
+ * 11: remote_calendar_id, 12: remote_start, 13: remote_end, 14: remote_raw_response,
+ * 15: forward_trace_id
  */
 const OUTBOX_HEADERS = [
   'created_at', 'text', 'item_type', 'status', 'attempts', 'last_error', 'last_attempt_at', 'sent_at', 
-  'id', 'remote_id', 'remote_action', 'remote_calendar_id', 'remote_start', 'remote_end', 'remote_raw_response'
+  'id', 'remote_id', 'remote_action', 'remote_calendar_id', 'remote_start', 'remote_end', 'remote_raw_response',
+  'forward_trace_id'
 ];
 
 export async function getSheetsClient() {
@@ -81,7 +83,7 @@ export async function ensureOutboxSheet(sheets: any, spreadsheetId: string) {
       
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: 'Outbox!A1:O1',
+        range: 'Outbox!A1:P1',
         valueInputOption: 'RAW',
         requestBody: {
           values: [OUTBOX_HEADERS]
@@ -93,11 +95,11 @@ export async function ensureOutboxSheet(sheets: any, spreadsheetId: string) {
   }
 }
 
-export async function enqueueOutbox(sheets: any, spreadsheetId: string, data: { text: string, item_type: string, id: string }) {
+export async function enqueueOutbox(sheets: any, spreadsheetId: string, data: { text: string, item_type: string, id: string, trace_id?: string }) {
   const now = new Date().toISOString();
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: 'Outbox!A:O',
+    range: 'Outbox!A:P',
     valueInputOption: 'RAW',
     requestBody: {
       values: [[
@@ -110,7 +112,8 @@ export async function enqueueOutbox(sheets: any, spreadsheetId: string, data: { 
         '',              // G: last_attempt_at
         '',              // H: sent_at
         data.id,         // I: id (OUTBOX_ID)
-        '', '', '', '', '', '' // J-O placeholders
+        '', '', '', '', '', '', // J-O placeholders
+        data.trace_id || '' // P: forward_trace_id
       ]],
     },
   });
@@ -121,7 +124,8 @@ export async function updateOutboxRow(sheets: any, spreadsheetId: string, range:
   success: boolean, 
   status?: number, 
   error?: string, 
-  data?: any 
+  data?: any,
+  traceId?: string
 }) {
   const now = new Date().toISOString();
   const currentRes = await sheets.spreadsheets.values.get({
@@ -133,8 +137,7 @@ export async function updateOutboxRow(sheets: any, spreadsheetId: string, range:
   const currentAttempts = parseInt(row[4] || '0', 10);
   const outboxId = row[8] || '';
 
-  // Determine if it was actually "sent" based on response data OR existing status
-  const isNowSent = result.success && result.data?.id;
+  const isNowSent = result.success && !!result.data?.id;
 
   const updatedRow = [
     row[0], // created_at
@@ -151,7 +154,8 @@ export async function updateOutboxRow(sheets: any, spreadsheetId: string, range:
     result.data?.calendarId || row[11] || '', // remote_calendar_id
     result.data?.start || result.data?.date || row[12] || '', // remote_start
     result.data?.end || row[13] || '', // remote_end
-    result.data ? JSON.stringify(result.data).substring(0, 1000) : (row[14] || '') // remote_raw_response
+    result.data ? JSON.stringify(result.data).substring(0, 1000) : (row[14] || ''), // remote_raw_response
+    result.traceId || row[15] || '' // forward_trace_id
   ];
 
   await sheets.spreadsheets.values.update({

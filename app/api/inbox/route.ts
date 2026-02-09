@@ -9,12 +9,15 @@ export const runtime = 'nodejs';
 export async function POST(req: Request) {
   let parsedFrom: 'urlencoded' | 'json' | 'rawFallback' | 'unknown' = 'unknown';
   let forwarded = false;
+  const traceId = crypto.randomUUID();
 
   try {
     const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
     const apiKey = process.env.API_KEY;
     const chronosKey = process.env.CHRONOS_INBOX_KEY || '87654321'; 
     const chronosBaseUrl = process.env.CALENDAR_AGENT_BASE_URL;
+
+    console.log(`[Inbox][${traceId}] Received new signal. Parsing body...`);
 
     if (!spreadsheetId || !apiKey) {
       return NextResponse.json({ ok: false, error: 'Missing environment configuration' }, { status: 500 });
@@ -27,7 +30,6 @@ export async function POST(req: Request) {
     let text = '';
     let createdAtClient = new Date().toISOString();
 
-    // 1. Unified Body Parsing
     if (contentType.includes('application/x-www-form-urlencoded') || rawTrim.includes('=')) {
       const params = new URLSearchParams(rawTrim);
       const foundText = params.get("text") || params.get("value") || params.get("note");
@@ -60,9 +62,9 @@ export async function POST(req: Request) {
     }
 
     const cleanText = text.trim();
+    console.log(`[Inbox][${traceId}] Text extracted: "${cleanText.substring(0, 30)}..."`);
     const sheets = await getSheetsClient();
     
-    // Get latest categories for classification
     let liveCategories = [];
     try {
       liveCategories = await getCategoriesFromSheet(sheets, spreadsheetId!);
@@ -70,12 +72,13 @@ export async function POST(req: Request) {
       liveCategories = ['personal', 'work', 'other'];
     }
 
-    // AI Classification
+    console.log(`[Inbox][${traceId}] Triggering Gemini classification...`);
     const classification = await classifyNote(cleanText, liveCategories);
-    const outboxId = crypto.randomUUID(); // Stable ID for this specific note instance
+    console.log(`[Inbox][${traceId}] Classification: ${classification.item_type} / ${classification.category}`);
+    
+    const outboxId = crypto.randomUUID(); 
     const createdAtServer = new Date().toISOString();
 
-    // 2. Persistence to Sheet1 (The User's Main List)
     let sheet1Range = '';
     try {
       await ensureHeaders(sheets, spreadsheetId!);
@@ -98,42 +101,47 @@ export async function POST(req: Request) {
       });
       sheet1Range = appendRes.data.updates?.updatedRange || '';
     } catch (sheetError) {
-      console.error('[Inbox] Sheet1 Storage Error:', sheetError);
+      console.error(`[Inbox][${traceId}] Sheet1 Storage Error:`, sheetError);
     }
 
-    // 3. Routing Logic (Tasks & Events go to Outbox)
     const isRoutable = classification.item_type === 'task' || classification.item_type === 'event';
     if (isRoutable) {
+      console.log(`[Inbox][${traceId}] Routing thought to Outbox. Type: ${classification.item_type}`);
       await ensureOutboxSheet(sheets, spreadsheetId!);
       const outboxRange = await enqueueOutbox(sheets, spreadsheetId!, { 
         text: cleanText, 
         item_type: classification.item_type,
-        id: outboxId 
+        id: outboxId,
+        trace_id: traceId
       });
       
-      // Attempt Immediate Forwarding
       try {
-        console.log(`[Inbox] Routable thought detected (${classification.item_type}). Forwarding ID: ${outboxId}`);
-        const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey, outboxId, chronosBaseUrl);
+        console.log(`[Inbox][${traceId}] Forwarding to Calendar Agent. ID: ${outboxId}`);
+        const res: ForwardResponse = await forwardToCalendar(cleanText, chronosKey, outboxId, traceId, chronosBaseUrl);
         
         forwarded = res.success && !!res.data?.id;
 
         if (outboxRange) {
-          await updateOutboxRow(sheets, spreadsheetId!, outboxRange, res);
+          await updateOutboxRow(sheets, spreadsheetId, outboxRange, { ...res, traceId });
         }
 
-        // If immediately successful, update Sheet1 status for visual feedback
         if (forwarded && sheet1Range) {
+          console.log(`[Inbox][${traceId}] Forwarding Success. Remote ID: ${res.data?.id}`);
           await updateRowStatus(sheets, spreadsheetId!, sheet1Range, 'FORWARDED');
+        } else {
+          console.warn(`[Inbox][${traceId}] Forwarding failed or returned no ID: ${res.error}`);
         }
       } catch (calError: any) {
-        console.warn(`[Inbox] Immediate forwarding failed for ID: ${outboxId}. Logged to outbox for retry.`);
+        console.error(`[Inbox][${traceId}] Fatal error in immediate forwarding:`, calError);
       }
+    } else {
+      console.log(`[Inbox][${traceId}] Note is informational. Stored locally only.`);
     }
 
     return NextResponse.json({
       ok: true,
       id: outboxId,
+      forward_trace_id: traceId,
       classification,
       calendar_routed: forwarded,
       forwarded,
@@ -141,7 +149,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error('[Inbox] Critical Failure:', error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    console.error(`[Inbox][${traceId}] Critical Failure:`, error);
+    return NextResponse.json({ ok: false, error: error.message, forward_trace_id: traceId }, { status: 500 });
   }
 }
